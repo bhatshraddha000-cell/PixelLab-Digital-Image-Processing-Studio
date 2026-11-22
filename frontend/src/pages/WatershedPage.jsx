@@ -406,17 +406,16 @@ export const WatershedPage = () => {
 
   // Available image pipeline stages
   const stages = [
-    { id: 'original', label: '1. Original' },
-    { id: 'grayscale', label: '2. Grayscale' },
-    { id: 'binary', label: '3. Binary Mask' },
-    { id: 'opened', label: '4. Morph Opening' },
-    { id: 'distance_heatmap', label: '5. Distance Heatmap' },
+    { id: 'original', label: '1. Original Coin Image' },
+    { id: 'grayscale', label: '2. Grayscale Image' },
+    { id: 'binary', label: '3. Binary Threshold Image' },
+    { id: 'opened', label: '4. Morphological Opening' },
+    { id: 'distance_heatmap', label: '5. Distance Transform' },
     { id: 'sure_fg', label: '6. Sure Foreground' },
     { id: 'sure_bg', label: '7. Sure Background' },
     { id: 'unknown', label: '8. Unknown Region' },
-    { id: 'markers_vis', label: '9. Marker Seeds' },
-    { id: 'segmented', label: '10. Color Segments' },
-    { id: 'boundary_overlay', label: '11. Boundary Dams' },
+    { id: 'markers_vis', label: '9. Marker Visualization' },
+    { id: 'boundary_overlay', label: '10. Watershed Segmentation' },
   ];
 
   return (
@@ -571,14 +570,19 @@ export const WatershedPage = () => {
                           key={s.id}
                           type="button"
                           onClick={() => handleSelectSample(s)}
-                          className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-center justify-between ${
+                          className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-center space-x-3 ${
                             selectedSampleId === s.id
                               ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/40 text-cyan-950 dark:text-cyan-200 font-semibold'
                               : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300'
                           }`}
                         >
-                          <div>
-                            <div className="font-bold">{s.name}</div>
+                          <img
+                            src={s.previewUrl}
+                            alt={s.name}
+                            className="w-12 h-12 rounded-lg object-cover border border-slate-300 dark:border-slate-700 bg-slate-900 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold truncate">{s.name}</div>
                             <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                               Ground Truth: {s.manualCount} coins • {s.dimensions}
                             </div>
@@ -1008,14 +1012,15 @@ export const WatershedPage = () => {
                   {viewMode === 'split' && (
                     <div className="w-full">
                       <ImageSplitSlider
-                        leftImage={
+                        beforeImage={inputPreviewUrl}
+                        afterImage={
                           currentResult?.images?.boundary_overlay ||
                           currentResult?.images?.segmented ||
-                          inputPreviewUrl
+                          null
                         }
-                        rightImage={inputPreviewUrl}
-                        leftLabel={currentResult ? 'Watershed Boundary Dams' : 'Input Target'}
-                        rightLabel="Touching Coins Target"
+                        beforeLabel="Original Coin Image"
+                        afterLabel={currentResult ? 'Watershed Segmentation' : 'Awaiting Processing'}
+                        theme="violet"
                         className="w-full h-80 sm:h-96"
                       />
                     </div>
@@ -1030,12 +1035,16 @@ export const WatershedPage = () => {
                       <img
                         src={
                           currentResult?.images?.[activeStage] ||
-                          (activeStage === 'original' ? inputPreviewUrl : null) ||
                           inputPreviewUrl
                         }
                         alt={`Stage: ${activeStage}`}
-                        className="max-h-full max-w-full object-contain rounded-lg pointer-events-none"
+                        className="max-h-full max-w-full object-contain rounded-lg pointer-events-none shadow-inner"
                       />
+                      {!currentResult && activeStage !== 'original' && (
+                        <div className="absolute top-4 right-4 px-3 py-1 rounded-full bg-slate-900/90 border border-violet-500/50 text-violet-300 text-[11px] font-mono backdrop-blur-md pointer-events-none">
+                          Previewing Target • Run to view {stages.find((s) => s.id === activeStage)?.label}
+                        </div>
+                      )}
                       {/* Manual Marker Overlay Canvas */}
                       <canvas
                         ref={canvasRef}

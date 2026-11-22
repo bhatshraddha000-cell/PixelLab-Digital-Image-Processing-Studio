@@ -10,8 +10,10 @@ export const ModuleCard = ({
   tags,
   route,
   illustration: Illustration,
+  previewImage,
   themeColor = 'cyan',
 }) => {
+  const [imgError, setImgError] = React.useState(false);
   const colorThemes = {
     cyan: {
       tag: 'bg-cyan-50 text-cyan-800 border-cyan-200 dark:bg-cyan-950/40 dark:text-cyan-300 dark:border-cyan-800/40',
@@ -46,14 +48,23 @@ export const ModuleCard = ({
       to={route}
       className={`group relative flex flex-col rounded-2xl bg-white dark:bg-navy-900/80 border border-slate-200 dark:border-slate-800/90 ${theme.borderHover} transition-all duration-300 overflow-hidden shadow-sm hover:shadow-xl cursor-pointer transform hover:-translate-y-1`}
     >
-      {/* Top Illustration Showcase Header */}
-      <div className="relative w-full overflow-hidden bg-slate-100 dark:bg-slate-950/80 p-3 sm:p-4 border-b border-slate-200 dark:border-slate-800/80">
-        <div className="w-full transition-transform duration-500 group-hover:scale-[1.02]">
-          {Illustration && <Illustration className="w-full h-48 sm:h-52 object-contain" />}
+      {/* Top Visual Showcase Header (Preview Image with Illustration Fallback) */}
+      <div className="relative w-full overflow-hidden bg-slate-900 dark:bg-slate-950 p-2 sm:p-3 border-b border-slate-200 dark:border-slate-800/80">
+        <div className="w-full h-48 sm:h-52 rounded-xl overflow-hidden flex items-center justify-center bg-slate-950 transition-transform duration-500 group-hover:scale-[1.02]">
+          {previewImage && !imgError ? (
+            <img
+              src={previewImage}
+              alt={title}
+              onError={() => setImgError(true)}
+              className="w-full h-full object-cover rounded-lg"
+            />
+          ) : Illustration ? (
+            <Illustration className="w-full h-full object-contain" />
+          ) : null}
         </div>
 
         {/* Module Number Floating Pill */}
-        <div className="absolute top-4 left-4 flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md bg-white/90 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800 shadow-sm">
+        <div className="absolute top-4 left-4 flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold border backdrop-blur-md bg-white/90 dark:bg-slate-950/80 border-slate-200 dark:border-slate-800 shadow-sm z-10">
           <span className="text-slate-600 dark:text-slate-400">MODULE</span>
           <span className={theme.num}>{number}</span>
         </div>

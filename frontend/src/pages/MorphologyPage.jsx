@@ -287,13 +287,13 @@ export const MorphologyPage = () => {
 
   // Available image stages
   const stages = [
-    { id: 'original', label: '1. Original' },
-    { id: 'grayscale', label: '2. Grayscale' },
+    { id: 'original', label: '1. Original Coin Image' },
+    { id: 'grayscale', label: '2. Grayscale Image' },
     { id: 'binary', label: '3. Binary Mask' },
-    { id: 'eroded', label: '4. Eroded' },
-    { id: 'dilated', label: '5. Dilated' },
-    { id: 'opened', label: '6. Opened' },
-    { id: 'labeled', label: '7. Labeled Result' },
+    { id: 'eroded', label: '4. Erosion Result' },
+    { id: 'dilated', label: '5. Dilation Result' },
+    { id: 'opened', label: '6. Separated Objects' },
+    { id: 'labeled', label: '7. Connected Components' },
   ];
 
   return (
@@ -447,14 +447,19 @@ export const MorphologyPage = () => {
                           key={s.id}
                           type="button"
                           onClick={() => handleSelectSample(s)}
-                          className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-center justify-between ${
+                          className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-center space-x-3 ${
                             selectedSampleId === s.id
                               ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-950 dark:text-teal-200 font-semibold'
                               : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300'
                           }`}
                         >
-                          <div>
-                            <div className="font-bold">{s.name}</div>
+                          <img
+                            src={s.previewUrl}
+                            alt={s.name}
+                            className="w-12 h-12 rounded-lg object-cover border border-slate-300 dark:border-slate-700 bg-slate-900 shrink-0"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold truncate">{s.name}</div>
                             <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                               Ground-Truth: {s.manualCount} coins • {s.dimensions}
                             </div>
@@ -824,14 +829,15 @@ export const MorphologyPage = () => {
                   {viewMode === 'split' && (
                     <div className="w-full">
                       <ImageSplitSlider
-                        leftImage={
+                        beforeImage={inputPreviewUrl}
+                        afterImage={
                           currentResult?.images?.labeled ||
                           currentResult?.images?.opened ||
-                          inputPreviewUrl
+                          null
                         }
-                        rightImage={inputPreviewUrl}
-                        leftLabel={currentResult ? 'Separated Objects' : 'Reference'}
-                        rightLabel="Touching Input"
+                        beforeLabel="Original Image"
+                        afterLabel={currentResult ? 'Separated Objects' : 'Awaiting Processing'}
+                        theme="teal"
                         className="w-full h-80 sm:h-96"
                       />
                     </div>
@@ -839,16 +845,20 @@ export const MorphologyPage = () => {
 
                   {/* View Mode: Single Stage View */}
                   {viewMode === 'single' && (
-                    <div className="w-full h-80 sm:h-96 flex items-center justify-center p-2">
+                    <div className="w-full h-80 sm:h-96 flex items-center justify-center p-2 relative">
                       <img
                         src={
                           currentResult?.images?.[activeStage] ||
-                          (activeStage === 'original' ? inputPreviewUrl : null) ||
                           inputPreviewUrl
                         }
                         alt={`Stage: ${activeStage}`}
-                        className="max-h-full max-w-full object-contain rounded-lg"
+                        className="max-h-full max-w-full object-contain rounded-lg shadow-inner"
                       />
+                      {!currentResult && activeStage !== 'original' && (
+                        <div className="absolute top-4 right-4 px-3 py-1 rounded-full bg-slate-900/90 border border-teal-500/50 text-teal-300 text-[11px] font-mono backdrop-blur-md">
+                          Previewing Target • Run to view {stages.find((s) => s.id === activeStage)?.label}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -857,27 +867,27 @@ export const MorphologyPage = () => {
                     <div className="w-full grid grid-cols-2 gap-2 p-2 h-80 sm:h-96">
                       <div className="flex flex-col items-center justify-center bg-slate-900 rounded-lg p-2 border border-slate-800">
                         <span className="text-[10px] font-mono font-bold text-slate-400 mb-1">
-                          INPUT TARGET
+                          ORIGINAL TOUCHING COINS
                         </span>
                         <img
                           src={inputPreviewUrl}
-                          alt="Input Target"
+                          alt="Original Touching Coins"
                           className="max-h-64 object-contain rounded"
                         />
                       </div>
                       <div className="flex flex-col items-center justify-center bg-slate-900 rounded-lg p-2 border border-slate-800">
                         <span className="text-[10px] font-mono font-bold text-teal-400 mb-1">
-                          OUTPUT LABELED
+                          SEPARATED CONNECTED COMPONENTS
                         </span>
                         {currentResult?.images?.labeled ? (
                           <img
                             src={currentResult.images.labeled}
-                            alt="Output Labeled"
+                            alt="Separated Objects"
                             className="max-h-64 object-contain rounded"
                           />
                         ) : (
                           <div className="text-xs text-slate-500 font-mono text-center p-4">
-                            Run processing to view labeled objects
+                            Run processing to view separated objects
                           </div>
                         )}
                       </div>

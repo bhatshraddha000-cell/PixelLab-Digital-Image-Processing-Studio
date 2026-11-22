@@ -150,6 +150,7 @@ export const ClassificationPage = () => {
   // Dataset state
   const [datasetStats, setDatasetStats] = useState(null);
   const [isLoadingDataset, setIsLoadingDataset] = useState(false);
+  const [selectedDatasetCategory, setSelectedDatasetCategory] = useState('circle');
 
   // History state
   const [historyList, setHistoryList] = useState([]);
@@ -909,14 +910,15 @@ export const ClassificationPage = () => {
               {/* Toolbar */}
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-4">
                 {/* Stage Selector */}
-                <div className="flex items-center bg-slate-100 dark:bg-navy-800 p-1 rounded-xl overflow-x-auto text-xs font-bold">
+                <div className="flex items-center bg-slate-100 dark:bg-navy-800 p-1 rounded-xl overflow-x-auto text-xs font-bold scrollbar-thin">
                   {[
-                    { id: 'annotated', label: 'Predictions' },
-                    { id: 'contours', label: 'Contours' },
-                    { id: 'bounding_boxes', label: 'Bounding Boxes' },
-                    { id: 'binary', label: 'Binary Mask' },
-                    { id: 'grayscale', label: 'Grayscale' },
-                    { id: 'original', label: 'Original' },
+                    { id: 'annotated', label: '1. Predictions & Labels' },
+                    { id: 'contours', label: '2. Contours' },
+                    { id: 'bounding_boxes', label: '3. Bounding Boxes' },
+                    { id: 'extracted_objects', label: '4. Extracted Objects' },
+                    { id: 'binary', label: '5. Binary Mask' },
+                    { id: 'grayscale', label: '6. Grayscale' },
+                    { id: 'original', label: '7. Original Scene' },
                   ].map((stage) => (
                     <button
                       key={stage.id}
@@ -924,7 +926,7 @@ export const ClassificationPage = () => {
                       onClick={() => setActiveStage(stage.id)}
                       className={`px-3 py-1.5 rounded-lg transition-all whitespace-nowrap ${
                         activeStage === stage.id
-                          ? 'bg-white dark:bg-navy-700 text-amber-600 dark:text-amber-400 shadow-sm'
+                          ? 'bg-amber-500 text-white font-extrabold shadow-sm'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                       }`}
                     >
@@ -982,12 +984,14 @@ export const ClassificationPage = () => {
                 {currentResult ? (
                   viewMode === 'split' ? (
                     <ImageSplitSlider
-                      originalImage={currentResult.images?.original || inputPreviewUrl}
-                      processedImage={
+                      beforeImage={inputPreviewUrl}
+                      afterImage={
                         activeStage === 'contours'
                           ? currentResult.images?.contours
                           : activeStage === 'bounding_boxes'
                           ? currentResult.images?.bounding_boxes
+                          : activeStage === 'extracted_objects'
+                          ? currentResult.images?.extracted_objects
                           : activeStage === 'binary'
                           ? currentResult.images?.binary
                           : activeStage === 'grayscale'
@@ -996,12 +1000,14 @@ export const ClassificationPage = () => {
                           ? currentResult.images?.original
                           : currentResult.images?.annotated
                       }
-                      originalLabel="Original Scene"
-                      processedLabel={
+                      beforeLabel="Original Scene"
+                      afterLabel={
                         activeStage === 'contours'
                           ? 'Extracted Contours'
                           : activeStage === 'bounding_boxes'
                           ? 'MinAreaRect BBoxes'
+                          : activeStage === 'extracted_objects'
+                          ? 'Extracted Objects'
                           : activeStage === 'binary'
                           ? 'Binary Segmented'
                           : activeStage === 'grayscale'
@@ -1010,6 +1016,8 @@ export const ClassificationPage = () => {
                           ? 'Input Image'
                           : 'KNN Classified Predictions'
                       }
+                      theme="amber"
+                      className="w-full h-80 sm:h-96"
                     />
                   ) : viewMode === 'sideBySide' ? (
                     <div className="grid grid-cols-2 gap-2 p-2 w-full h-full">
@@ -1030,6 +1038,8 @@ export const ClassificationPage = () => {
                               ? currentResult.images?.contours
                               : activeStage === 'bounding_boxes'
                               ? currentResult.images?.bounding_boxes
+                              : activeStage === 'extracted_objects'
+                              ? currentResult.images?.extracted_objects
                               : activeStage === 'binary'
                               ? currentResult.images?.binary
                               : activeStage === 'grayscale'
@@ -1054,6 +1064,8 @@ export const ClassificationPage = () => {
                             ? currentResult.images?.contours
                             : activeStage === 'bounding_boxes'
                             ? currentResult.images?.bounding_boxes
+                            : activeStage === 'extracted_objects'
+                            ? currentResult.images?.extracted_objects
                             : activeStage === 'binary'
                             ? currentResult.images?.binary
                             : activeStage === 'grayscale'
@@ -1157,6 +1169,31 @@ export const ClassificationPage = () => {
                     Centroid: ({selectedObject.centroid?.[0]}, {selectedObject.centroid?.[1]})
                   </span>
                 </div>
+
+                {/* Cropped Object & Detailed Measurements Banner */}
+                {selectedObject.crop && (
+                  <div className="flex items-center space-x-4 p-3 rounded-2xl bg-slate-50 dark:bg-navy-800 border border-slate-200 dark:border-slate-700">
+                    <img
+                      src={selectedObject.crop}
+                      alt={`Object #${selectedObject.id} Crop`}
+                      className="w-16 h-16 rounded-xl object-contain bg-slate-950 border border-amber-500/40 p-1 shrink-0 shadow-inner"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center space-x-2">
+                        <span>Actual Isolated Object Crop</span>
+                        <span className="font-mono text-[10px] text-amber-600 dark:text-amber-400">
+                          ID #{selectedObject.id}
+                        </span>
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 mt-0.5">
+                        Bounding Box: [x={selectedObject.bbox?.[0]}, y={selectedObject.bbox?.[1]}, w={selectedObject.bbox?.[2]}, h={selectedObject.bbox?.[3]}] px
+                      </div>
+                      <div className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
+                        Area: {selectedObject.area} px • Perimeter: {selectedObject.perimeter} px • Vertices: {selectedObject.vertices}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
                   {/* Descriptors Metric Grid (7 cols) */}
@@ -1596,6 +1633,68 @@ export const ClassificationPage = () => {
                   </div>
                 );
               })}
+            </div>
+
+            {/* Visual Dataset Sample Gallery */}
+            <div className="pt-6 border-t border-slate-200 dark:border-slate-800 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                    Sample Gallery: Inspect Category Training Examples
+                  </h3>
+                  <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                    Click a category below to preview raster samples with scale, orientation, and noise variations.
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-1 p-1 bg-slate-100 dark:bg-navy-800 rounded-xl text-xs font-bold overflow-x-auto">
+                  {['circle', 'triangle', 'square', 'rectangle', 'ellipse'].map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setSelectedDatasetCategory(cat)}
+                      className={`px-3 py-1.5 rounded-lg uppercase transition-all whitespace-nowrap ${
+                        selectedDatasetCategory === cat
+                          ? 'bg-amber-500 text-white font-extrabold shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Sample Thumbnails Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-navy-950/60 border border-slate-200 dark:border-slate-800">
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => {
+                  const numStr = String(num).padStart(2, '0');
+                  const filename = `${selectedDatasetCategory}_${numStr}.png`;
+                  const imgUrl = `/images/modules/classification/dataset/${selectedDatasetCategory}/${filename}`;
+                  return (
+                    <div
+                      key={num}
+                      className="p-2.5 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800 flex flex-col items-center space-y-2 group hover:border-amber-400 transition-all shadow-sm"
+                    >
+                      <div className="w-full aspect-square rounded-lg bg-slate-950 flex items-center justify-center overflow-hidden border border-slate-800 p-2">
+                        <img
+                          src={imgUrl}
+                          alt={filename}
+                          className="w-full h-full object-contain group-hover:scale-105 transition-transform"
+                        />
+                      </div>
+                      <div className="w-full text-center">
+                        <div className="text-[10px] font-mono font-bold text-slate-700 dark:text-slate-300 truncate">
+                          {filename}
+                        </div>
+                        <div className="text-[9px] font-mono text-amber-600 dark:text-amber-400 mt-0.5">
+                          Synthetic Sample #{num}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>

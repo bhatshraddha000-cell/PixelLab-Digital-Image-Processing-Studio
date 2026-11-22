@@ -472,6 +472,8 @@ def process_classification_pipeline(
     bbox_img = bgr.copy()
     # C. Annotated prediction image
     annotated_img = bgr.copy()
+    # D. Extracted Objects isolated mask
+    extracted_img = cv2.bitwise_and(bgr, bgr, mask=binary)
 
     # Palette
     for obj in classified_objects:
@@ -481,6 +483,16 @@ def process_classification_pipeline(
         conf = obj["confidence"]
         rgb_col = obj["color_rgb"]
         bgr_col = (rgb_col[2], rgb_col[1], rgb_col[0])
+
+        # Individual crop
+        pad = 6
+        y1, y2 = max(0, by - pad), min(h, by + bh + pad)
+        x1, x2 = max(0, bx - pad), min(w, bx + bw + pad)
+        crop = bgr[y1:y2, x1:x2].copy()
+        if crop.size > 0:
+            obj["crop"] = encode_image_to_base64(crop)
+        else:
+            obj["crop"] = None
 
         # BBox image
         cv2.rectangle(bbox_img, (bx, by), (bx + bw, by + bh), (0, 220, 255), 1)
@@ -515,6 +527,7 @@ def process_classification_pipeline(
         "original": encode_image_to_base64(bgr),
         "grayscale": encode_image_to_base64(gray),
         "binary": encode_image_to_base64(binary),
+        "extracted_objects": encode_image_to_base64(extracted_img),
         "contours": encode_image_to_base64(contours_img),
         "bounding_boxes": encode_image_to_base64(bbox_img),
         "annotated": encode_image_to_base64(annotated_img),

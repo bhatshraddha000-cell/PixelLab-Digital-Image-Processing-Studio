@@ -722,9 +722,10 @@ export const EnhancementPage = () => {
                 <div className="space-y-2">
                   <ImageSplitSlider
                     beforeImage={currentResult?.images?.original || inputPreviewUrl}
-                    afterImage={currentResult?.images?.enhanced || inputPreviewUrl}
-                    beforeLabel="Input Noisy Image"
-                    afterLabel={currentResult ? "Enhanced Output" : "Original (Press Apply)"}
+                    afterImage={currentResult?.images?.enhanced || null}
+                    beforeLabel="Original Image"
+                    afterLabel={currentResult ? "Enhanced Image" : "Awaiting Enhancement"}
+                    theme="cyan"
                     className="w-full h-80 sm:h-96 shadow-lg"
                   />
                   <div className="text-center text-[11px] font-mono text-slate-500">
@@ -736,12 +737,12 @@ export const EnhancementPage = () => {
               {/* View 2: 3-Stage Pipeline Side-by-Side */}
               {viewMode === 'sideBySide' && (
                 <div className="space-y-4">
-                  {/* Stage 1: Input Noisy */}
+                  {/* Stage 1: Original Image */}
                   <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-center">
-                    <div className="text-xs font-mono font-bold text-slate-300 mb-2">Stage 1: Input Noisy Image</div>
+                    <div className="text-xs font-mono font-bold text-slate-300 mb-2">Stage 1: Original Image</div>
                     <img
                       src={currentResult?.images?.original || inputPreviewUrl}
-                      alt="Input"
+                      alt="Original Image"
                       className="w-full h-44 object-contain rounded-lg"
                     />
                   </div>
@@ -751,17 +752,17 @@ export const EnhancementPage = () => {
                     <div className="text-xs font-mono font-bold text-blue-400 mb-2">Stage 2: Gaussian Smoothed (k={kernelSize})</div>
                     <img
                       src={currentResult?.images?.smoothed || inputPreviewUrl}
-                      alt="Smoothed"
+                      alt="Gaussian Smoothed"
                       className="w-full h-44 object-contain rounded-lg"
                     />
                   </div>
 
-                  {/* Stage 3: Final Enhanced */}
+                  {/* Stage 3: Enhanced Image */}
                   <div className="p-3 rounded-xl bg-slate-950 border border-cyan-500/40 text-center">
-                    <div className="text-xs font-mono font-bold text-cyan-400 mb-2">Stage 3: Final Enhanced (γ={gamma.toFixed(2)})</div>
+                    <div className="text-xs font-mono font-bold text-cyan-400 mb-2">Stage 3: Enhanced Image (γ={gamma.toFixed(2)})</div>
                     <img
                       src={currentResult?.images?.enhanced || inputPreviewUrl}
-                      alt="Enhanced"
+                      alt="Enhanced Image"
                       className="w-full h-44 object-contain rounded-lg"
                     />
                   </div>

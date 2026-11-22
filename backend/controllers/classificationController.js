@@ -456,6 +456,7 @@ export const processClassification = async (req, res) => {
           original: pyResult.images?.original || `/uploads/${originalFileRel}`,
           grayscale: pyResult.images?.grayscale,
           binary: pyResult.images?.binary || `/uploads/${segmentedFileRel}`,
+          extracted_objects: pyResult.images?.extracted_objects,
           contours: pyResult.images?.contours || `/uploads/${contoursFileRel}`,
           bounding_boxes: pyResult.images?.bounding_boxes || `/uploads/${bboxFileRel}`,
           annotated: pyResult.images?.annotated || `/uploads/${annotatedFileRel}`,

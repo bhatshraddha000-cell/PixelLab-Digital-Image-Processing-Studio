@@ -34,6 +34,7 @@ export const Home = () => {
       tags: ['Gaussian Filter', 'Gamma Transformation', 'Histogram Analysis'],
       route: '/modules/enhancement',
       illustration: EnhancementIllustration,
+      previewImage: '/images/modules/enhancement/card_preview.png',
       themeColor: 'cyan',
     },
     {
@@ -44,6 +45,7 @@ export const Home = () => {
       tags: ['Erosion', 'Dilation', 'Connected Components'],
       route: '/modules/morphology',
       illustration: MorphologyIllustration,
+      previewImage: '/images/modules/morphology/card_preview.png',
       themeColor: 'teal',
     },
     {
@@ -54,6 +56,7 @@ export const Home = () => {
       tags: ['Distance Transform', 'Markers', 'Watershed'],
       route: '/modules/watershed',
       illustration: WatershedIllustration,
+      previewImage: '/images/modules/watershed/card_preview.png',
       themeColor: 'violet',
     },
     {
@@ -64,6 +67,7 @@ export const Home = () => {
       tags: ['Area', 'Perimeter', 'Shape Descriptors'],
       route: '/modules/classification',
       illustration: ClassificationIllustration,
+      previewImage: '/images/modules/classification/card_preview.png',
       themeColor: 'amber',
     },
   ];
@@ -108,6 +112,7 @@ export const Home = () => {
                 tags={module.tags}
                 route={module.route}
                 illustration={module.illustration}
+                previewImage={module.previewImage}
                 themeColor={module.themeColor}
               />
             ))}
