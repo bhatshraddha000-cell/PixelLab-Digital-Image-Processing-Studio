@@ -66,9 +66,9 @@ router.get('/health', async (req, res) => {
     },
     modules: [
       { id: 'enhancement', name: 'Image Enhancement (Gaussian & Gamma)', ready: opencvHealth.ready },
-      { id: 'morphology', name: 'Morphological Object Separation', ready: false },
-      { id: 'watershed', name: 'Watershed Segmentation', ready: false },
-      { id: 'classification', name: 'Geometrical Object Classification', ready: false },
+      { id: 'morphology', name: 'Morphological Object Separation & Counting', ready: opencvHealth.ready },
+      { id: 'watershed', name: 'Watershed Segmentation & Coin Counting', ready: opencvHealth.ready },
+      { id: 'classification', name: 'Geometrical Object Classification', ready: opencvHealth.ready },
     ],
   });
 });

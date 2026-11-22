@@ -100,21 +100,189 @@ export const apiService = {
   },
 
   /**
-   * Placeholders for future phases
+   * Module 02: Morphological Object Separation & Counting Endpoints
    */
   morphology: {
-    async process() {
-      throw new Error('Morphological Separation algorithm will be activated in Phase 3.');
+    /**
+     * Get available built-in benchmark coin sample datasets
+     */
+    async getSamples() {
+      return request('/morphology/samples');
+    },
+
+    /**
+     * Process image with morphological operations (erosion, dilation, opening, connected-components)
+     */
+    async process(formData) {
+      const url = `${API_BASE}/morphology/process`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+        },
+        body: formData,
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || data.error || `Morphology processing failed with status ${response.status}`);
+      }
+      return data;
+    },
+
+    /**
+     * Retrieve morphology experiment history
+     */
+    async getHistory() {
+      return request('/morphology/history');
+    },
+
+    /**
+     * Retrieve single morphology experiment details
+     */
+    async getHistoryById(id) {
+      return request(`/morphology/history/${id}`);
+    },
+
+    /**
+     * Delete a morphology experiment from history and disk
+     */
+    async deleteHistory(id) {
+      return request(`/morphology/history/${id}`, {
+        method: 'DELETE',
+      });
     },
   },
+  /**
+   * Module 03: Marker-Controlled Watershed Segmentation Endpoints
+   */
   watershed: {
-    async process() {
-      throw new Error('Watershed Segmentation algorithm will be activated in Phase 4.');
+    /**
+     * Get available built-in benchmark touching coin sample datasets
+     */
+    async getSamples() {
+      return request('/watershed/samples');
+    },
+
+    /**
+     * Process image with marker-controlled watershed segmentation
+     */
+    async process(formData) {
+      const url = `${API_BASE}/watershed/process`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+        },
+        body: formData,
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || data.error || `Watershed processing failed with status ${response.status}`);
+      }
+      return data;
+    },
+
+    /**
+     * Retrieve watershed experiment history
+     */
+    async getHistory() {
+      return request('/watershed/history');
+    },
+
+    /**
+     * Retrieve single watershed experiment details
+     */
+    async getHistoryById(id) {
+      return request(`/watershed/history/${id}`);
+    },
+
+    /**
+     * Delete a watershed experiment from history and disk
+     */
+    async deleteHistory(id) {
+      return request(`/watershed/history/${id}`, {
+        method: 'DELETE',
+      });
     },
   },
+  /**
+   * Module 04: Region-Based Object Classification Using Geometrical Descriptors
+   */
   classification: {
-    async process() {
-      throw new Error('Geometrical Classification algorithm will be activated in Phase 5.');
+    /**
+     * Get available benchmark multi-shape scenes
+     */
+    async getSamples() {
+      return request('/classification/samples');
+    },
+
+    /**
+     * Get dataset statistics, category counts, and sample previews
+     */
+    async getDataset() {
+      return request('/classification/dataset');
+    },
+
+    /**
+     * Train KNN classifier on the geometric dataset
+     */
+    async train(params = {}) {
+      return request('/classification/train', {
+        method: 'POST',
+        body: params,
+      });
+    },
+
+    /**
+     * Get active/default trained classification model details
+     */
+    async getModel() {
+      return request('/classification/model');
+    },
+
+    /**
+     * Process image for object segmentation, feature extraction, and classification
+     */
+    async process(formData) {
+      const url = `${API_BASE}/classification/process`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+        },
+        body: formData,
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.message || data.error || `Classification failed with status ${response.status}`);
+      }
+      return data;
+    },
+
+    /**
+     * Retrieve classification experiment history
+     */
+    async getHistory() {
+      return request('/classification/history');
+    },
+
+    /**
+     * Retrieve single classification experiment details
+     */
+    async getHistoryById(id) {
+      return request(`/classification/history/${id}`);
+    },
+
+    /**
+     * Delete a classification experiment from history and disk
+     */
+    async deleteHistory(id) {
+      return request(`/classification/history/${id}`, {
+        method: 'DELETE',
+      });
     },
   },
 };

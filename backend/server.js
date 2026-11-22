@@ -7,6 +7,9 @@ import { fileURLToPath } from 'url';
 import { connectDB } from './config/db.js';
 import healthRoutes from './routes/healthRoutes.js';
 import enhancementRoutes from './routes/enhancementRoutes.js';
+import morphologyRoutes from './routes/morphologyRoutes.js';
+import watershedRoutes from './routes/watershedRoutes.js';
+import classificationRoutes from './routes/classificationRoutes.js';
 
 // Resolve directory name and load environment variables reliably
 const __filename = fileURLToPath(import.meta.url);
@@ -45,6 +48,9 @@ app.use('/samples', express.static(path.join(__dirname, 'samples')));
 // API Routes
 app.use('/api', healthRoutes);
 app.use('/api/enhancement', enhancementRoutes);
+app.use('/api/morphology', morphologyRoutes);
+app.use('/api/watershed', watershedRoutes);
+app.use('/api/classification', classificationRoutes);
 
 // Root informational endpoint
 app.get('/', (req, res) => {
@@ -52,12 +58,17 @@ app.get('/', (req, res) => {
     name: 'PixelLab – Digital Image Processing Studio API',
     tagline: 'Explore Images. Process Intelligence. Discover Results.',
     status: 'online',
-    phase: 'Phase 2 - Image Enhancement Module & Service Foundation',
+    phase: 'Module 04 - Region-Based Object Classification Using Geometrical Descriptors',
     endpoints: {
       health: '/api/health',
       enhancement: '/api/enhancement/process',
-      history: '/api/enhancement/history',
-      samples: '/api/enhancement/samples',
+      morphology: '/api/morphology/process',
+      watershed: '/api/watershed/process',
+      classification: '/api/classification/process',
+      classificationSamples: '/api/classification/samples',
+      classificationDataset: '/api/classification/dataset',
+      classificationTrain: '/api/classification/train',
+      watershedHistory: '/api/watershed/history',
     },
   });
 });
