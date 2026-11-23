@@ -28,9 +28,12 @@ import {
   Undo2,
   Bookmark,
   Target,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import ImageSplitSlider from '../components/ImageSplitSlider';
 import MathFormula from '../components/MathFormula';
+import ErrorBoundary from '../components/ErrorBoundary';
 import apiService from '../services/api';
 import {
   exportWatershedCSV,
@@ -86,8 +89,15 @@ export const WatershedPage = () => {
   const [currentResult, setCurrentResult] = useState(null);
   const [viewMode, setViewMode] = useState('split'); // 'split' | 'single' | 'sideBySide'
   const [activeStage, setActiveStage] = useState('boundary_overlay');
+  const [splitLeftStage, setSplitLeftStage] = useState('original');
+  const [splitRightStage, setSplitRightStage] = useState('boundary_overlay');
+  const [dualLeftStage, setDualLeftStage] = useState('distance_heatmap');
+  const [dualRightStage, setDualRightStage] = useState('boundary_overlay');
   const [showOverlays, setShowOverlays] = useState(true);
   const [selectedComponentId, setSelectedComponentId] = useState(null);
+
+  const stageButtonRefs = useRef({});
+  const stageContainerRef = useRef(null);
 
   // Parameter Comparison state
   const [isRunningComparison, setIsRunningComparison] = useState(false);
@@ -406,17 +416,84 @@ export const WatershedPage = () => {
 
   // Available image pipeline stages
   const stages = [
-    { id: 'original', label: '1. Original Coin Image' },
-    { id: 'grayscale', label: '2. Grayscale Image' },
-    { id: 'binary', label: '3. Binary Threshold Image' },
-    { id: 'opened', label: '4. Morphological Opening' },
-    { id: 'distance_heatmap', label: '5. Distance Transform' },
-    { id: 'sure_fg', label: '6. Sure Foreground' },
-    { id: 'sure_bg', label: '7. Sure Background' },
-    { id: 'unknown', label: '8. Unknown Region' },
-    { id: 'markers_vis', label: '9. Marker Visualization' },
-    { id: 'boundary_overlay', label: '10. Watershed Segmentation' },
+    { id: 'original', num: '01', label: '1. Original Coin Image', short: 'Original', desc: 'Raw photograph with touching coins' },
+    { id: 'grayscale', num: '02', label: '2. Grayscale Image', short: 'Grayscale', desc: 'Luminance intensity conversion I(x,y)' },
+    { id: 'binary', num: '03', label: '3. Binary Threshold Image', short: 'Binary Mask', desc: 'Otsu/Adaptive binary thresholding' },
+    { id: 'opened', num: '04', label: '4. Morphological Opening', short: 'Opening', desc: 'Erosion and dilation to sever small noise bridges' },
+    { id: 'distance_heatmap', num: '05', label: '5. Distance Transform', short: 'Distance Map', desc: 'Exact Euclidean distance to nearest boundary pixel' },
+    { id: 'sure_fg', num: '06', label: '6. Sure Foreground', short: 'Sure FG', desc: 'Peak thresholded regions guaranteed to belong to coin centers' },
+    { id: 'sure_bg', num: '07', label: '7. Sure Background', short: 'Sure BG', desc: 'Dilated mask guaranteed to belong to background' },
+    { id: 'unknown', num: '08', label: '8. Unknown Region', short: 'Unknown', desc: 'Border transition band between foreground and background' },
+    { id: 'markers_vis', num: '09', label: '9. Marker Visualization', short: 'Markers', desc: 'Connected component seed labels for catchment basins' },
+    { id: 'boundary_overlay', num: '10', label: '10. Watershed Segmentation', short: 'Watershed', desc: 'Flooded watershed dams separating touching coins' },
   ];
+
+  // Retrieve exact image for any stage safely
+  const getStageImage = (stageId) => {
+    if (!currentResult || !currentResult.images) {
+      return stageId === 'original' ? inputPreviewUrl : null;
+    }
+    const imgs = currentResult.images;
+    switch (stageId) {
+      case 'original':
+        return imgs.original || imgs.originalImage || inputPreviewUrl;
+      case 'grayscale':
+        return imgs.grayscale || imgs.grayscaleImage || null;
+      case 'binary':
+        return imgs.binary || imgs.binaryImage || null;
+      case 'opened':
+      case 'opening':
+        return imgs.opened || imgs.opening || imgs.openingImage || null;
+      case 'distance_heatmap':
+      case 'distance_transform':
+      case 'distanceTransform':
+        return imgs.distance_heatmap || imgs.distance_transform || imgs.distanceTransform || imgs.distanceTransformImage || null;
+      case 'sure_fg':
+      case 'sureForeground':
+        return imgs.sure_fg || imgs.sureForeground || imgs.sureForegroundImage || null;
+      case 'sure_bg':
+      case 'sureBackground':
+        return imgs.sure_bg || imgs.sureBackground || imgs.sureBackgroundImage || null;
+      case 'unknown':
+      case 'unknownRegion':
+        return imgs.unknown || imgs.unknownRegion || imgs.unknownRegionImage || null;
+      case 'markers_vis':
+      case 'markers':
+        return imgs.markers_vis || imgs.markers || imgs.markerVisualizationImage || null;
+      case 'boundary_overlay':
+      case 'segmented':
+      case 'segmentation':
+        return imgs.boundary_overlay || imgs.segmented || imgs.segmentedImage || null;
+      default:
+        return imgs[stageId] || null;
+    }
+  };
+
+  // Stage button click handler
+  const handleSelectStage = (stageId) => {
+    setActiveStage(stageId);
+    if (viewMode === 'split') {
+      setSplitRightStage(stageId);
+    } else if (viewMode === 'sideBySide') {
+      setDualRightStage(stageId);
+    }
+  };
+
+  // Auto-scroll active stage button into view
+  useEffect(() => {
+    const el = stageButtonRefs.current[activeStage];
+    if (el && typeof el.scrollIntoView === 'function') {
+      el.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+    }
+  }, [activeStage]);
+
+  // Horizontal scroll buttons
+  const scrollStages = (direction) => {
+    if (stageContainerRef.current) {
+      const scrollAmount = direction === 'left' ? -180 : 180;
+      stageContainerRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+    }
+  };
 
   return (
     <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-8">
@@ -499,6 +576,7 @@ export const WatershedPage = () => {
       {/* TAB 1: WATERSHED SEGMENTATION WORKSPACE */}
       {/* ========================================================== */}
       {activeTab === 'workspace' && (
+        <ErrorBoundary title="Watershed Workspace Error">
         <div className="space-y-8">
           
           {/* Main 3-Column Studio Layout */}
@@ -953,7 +1031,7 @@ export const WatershedPage = () => {
                     <button
                       type="button"
                       onClick={() => setViewMode('split')}
-                      className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
                         viewMode === 'split'
                           ? 'bg-white dark:bg-navy-800 text-cyan-700 dark:text-cyan-300 shadow-sm'
                           : 'text-slate-600 dark:text-slate-400'
@@ -964,7 +1042,7 @@ export const WatershedPage = () => {
                     <button
                       type="button"
                       onClick={() => setViewMode('single')}
-                      className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
                         viewMode === 'single'
                           ? 'bg-white dark:bg-navy-800 text-cyan-700 dark:text-cyan-300 shadow-sm'
                           : 'text-slate-600 dark:text-slate-400'
@@ -975,7 +1053,7 @@ export const WatershedPage = () => {
                     <button
                       type="button"
                       onClick={() => setViewMode('sideBySide')}
-                      className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                      className={`px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
                         viewMode === 'sideBySide'
                           ? 'bg-white dark:bg-navy-800 text-cyan-700 dark:text-cyan-300 shadow-sm'
                           : 'text-slate-600 dark:text-slate-400'
@@ -986,23 +1064,64 @@ export const WatershedPage = () => {
                   </div>
                 </div>
 
-                {/* Pipeline Stages Pills */}
-                <div className="flex items-center space-x-1 overflow-x-auto pb-1 text-[11px] scrollbar-thin">
-                  {stages.map((stg) => (
-                    <button
-                      key={stg.id}
-                      type="button"
-                      onClick={() => setActiveStage(stg.id)}
-                      disabled={!currentResult && stg.id !== 'original'}
-                      className={`px-2 py-1 rounded-lg whitespace-nowrap font-medium transition-all ${
-                        activeStage === stg.id
-                          ? 'bg-cyan-600 text-white font-bold shadow-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40'
-                      }`}
-                    >
-                      {stg.label}
-                    </button>
-                  ))}
+                {/* Pipeline Stages Carousel */}
+                <div className="relative flex items-center bg-slate-50 dark:bg-slate-950 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => scrollStages('left')}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
+                    title="Scroll stages left"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+
+                  <div
+                    ref={stageContainerRef}
+                    className="flex-1 flex items-center space-x-1.5 overflow-x-auto py-0.5 px-1 scroll-smooth"
+                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                  >
+                    {stages.map((stg) => {
+                      const isActive = activeStage === stg.id;
+                      const hasData = Boolean(getStageImage(stg.id));
+                      return (
+                        <button
+                          key={stg.id}
+                          ref={(el) => (stageButtonRefs.current[stg.id] = el)}
+                          type="button"
+                          onClick={() => handleSelectStage(stg.id)}
+                          className={`px-2.5 py-1.5 rounded-lg whitespace-nowrap text-xs font-medium transition-all flex items-center space-x-1.5 shrink-0 cursor-pointer ${
+                            isActive
+                              ? 'bg-cyan-600 text-white font-bold shadow-md shadow-cyan-600/20'
+                              : 'bg-white dark:bg-navy-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-navy-700 border border-slate-200 dark:border-slate-700/60'
+                          }`}
+                          title={`${stg.label}: ${stg.desc}`}
+                        >
+                          <span
+                            className={`font-mono text-[10px] px-1 py-0.5 rounded font-bold ${
+                              isActive
+                                ? 'bg-cyan-800 text-cyan-100'
+                                : 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300'
+                            }`}
+                          >
+                            {stg.num}
+                          </span>
+                          <span>{stg.short}</span>
+                          {!hasData && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 opacity-60" title="Awaiting processing" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => scrollStages('right')}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-cyan-600 dark:hover:text-cyan-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer"
+                    title="Scroll stages right"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
                 </div>
 
                 {/* Interactive Inspection Canvas */}
@@ -1010,16 +1129,48 @@ export const WatershedPage = () => {
                   
                   {/* View Mode: Split Slider */}
                   {viewMode === 'split' && (
-                    <div className="w-full">
+                    <div className="w-full space-y-2">
+                      {/* Split Stage Comparator Selectors */}
+                      <div className="flex items-center justify-between text-xs px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-slate-300">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-[10px] font-bold text-cyan-400 uppercase">Left:</span>
+                          <select
+                            value={splitLeftStage}
+                            onChange={(e) => setSplitLeftStage(e.target.value)}
+                            className="bg-slate-800 text-slate-200 text-xs rounded px-2 py-0.5 border border-slate-700 font-medium"
+                          >
+                            {stages.map((s) => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="text-[11px] font-mono font-bold text-violet-400">
+                          SLIDER COMPARISON
+                        </div>
+
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono text-[10px] font-bold text-cyan-400 uppercase">Right:</span>
+                          <select
+                            value={splitRightStage}
+                            onChange={(e) => {
+                              setSplitRightStage(e.target.value);
+                              setActiveStage(e.target.value);
+                            }}
+                            className="bg-slate-800 text-slate-200 text-xs rounded px-2 py-0.5 border border-slate-700 font-medium"
+                          >
+                            {stages.map((s) => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
                       <ImageSplitSlider
-                        beforeImage={inputPreviewUrl}
-                        afterImage={
-                          currentResult?.images?.boundary_overlay ||
-                          currentResult?.images?.segmented ||
-                          null
-                        }
-                        beforeLabel="Original Coin Image"
-                        afterLabel={currentResult ? 'Watershed Segmentation' : 'Awaiting Processing'}
+                        beforeImage={getStageImage(splitLeftStage) || inputPreviewUrl}
+                        afterImage={getStageImage(splitRightStage) || null}
+                        beforeLabel={stages.find((s) => s.id === splitLeftStage)?.label || 'Left Stage'}
+                        afterLabel={stages.find((s) => s.id === splitRightStage)?.label || 'Right Stage'}
                         theme="violet"
                         className="w-full h-80 sm:h-96"
                       />
@@ -1028,67 +1179,114 @@ export const WatershedPage = () => {
 
                   {/* View Mode: Single Stage View */}
                   {viewMode === 'single' && (
-                    <div
-                      className="relative w-full h-80 sm:h-96 flex items-center justify-center p-2 cursor-crosshair"
-                      onClick={handleCanvasClick}
-                    >
-                      <img
-                        src={
-                          currentResult?.images?.[activeStage] ||
-                          inputPreviewUrl
-                        }
-                        alt={`Stage: ${activeStage}`}
-                        className="max-h-full max-w-full object-contain rounded-lg pointer-events-none shadow-inner"
-                      />
-                      {!currentResult && activeStage !== 'original' && (
-                        <div className="absolute top-4 right-4 px-3 py-1 rounded-full bg-slate-900/90 border border-violet-500/50 text-violet-300 text-[11px] font-mono backdrop-blur-md pointer-events-none">
-                          Previewing Target • Run to view {stages.find((s) => s.id === activeStage)?.label}
-                        </div>
-                      )}
-                      {/* Manual Marker Overlay Canvas */}
-                      <canvas
-                        ref={canvasRef}
-                        width={imageMeta.width}
-                        height={imageMeta.height}
-                        className="absolute inset-0 w-full h-full object-contain pointer-events-auto"
-                      />
+                    <div className="w-full flex flex-col items-center justify-center">
+                      <div className="w-full flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800 text-xs font-mono">
+                        <span className="font-bold text-cyan-400">
+                          {stages.find((s) => s.id === activeStage)?.label}
+                        </span>
+                        <span className="text-slate-400 text-[11px]">
+                          {stages.find((s) => s.id === activeStage)?.desc}
+                        </span>
+                      </div>
+
+                      <div
+                        className="relative w-full h-80 sm:h-96 flex items-center justify-center p-2 cursor-crosshair bg-slate-950"
+                        onClick={handleCanvasClick}
+                      >
+                        {getStageImage(activeStage) ? (
+                          <img
+                            src={getStageImage(activeStage)}
+                            alt={`Stage: ${activeStage}`}
+                            className="max-h-full max-w-full object-contain rounded-lg pointer-events-none shadow-inner"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center justify-center text-center p-6 space-y-2 pointer-events-none">
+                            <span className="font-mono text-sm font-bold text-slate-400">
+                              {stages.find((s) => s.id === activeStage)?.label}
+                            </span>
+                            <p className="text-xs text-slate-500 max-w-sm">
+                              {stages.find((s) => s.id === activeStage)?.desc}
+                            </p>
+                            <span className="px-3 py-1 rounded-full bg-slate-900 border border-violet-500/50 text-violet-300 text-[11px] font-mono">
+                              Run watershed segmentation to generate this stage
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Manual Marker Overlay Canvas */}
+                        <canvas
+                          ref={canvasRef}
+                          width={imageMeta.width}
+                          height={imageMeta.height}
+                          className="absolute inset-0 w-full h-full object-contain pointer-events-auto"
+                        />
+                      </div>
                     </div>
                   )}
 
                   {/* View Mode: Dual View Side-by-Side */}
                   {viewMode === 'sideBySide' && (
-                    <div className="w-full grid grid-cols-2 gap-2 p-2 h-80 sm:h-96">
-                      <div className="flex flex-col items-center justify-center bg-slate-900 rounded-lg p-2 border border-slate-800">
-                        <span className="text-[10px] font-mono font-bold text-cyan-400 mb-1">
-                          DISTANCE TRANSFORM HEATMAP
-                        </span>
-                        {currentResult?.images?.distance_heatmap ? (
-                          <img
-                            src={currentResult.images.distance_heatmap}
-                            alt="Distance Heatmap"
-                            className="max-h-64 object-contain rounded"
-                          />
-                        ) : (
-                          <div className="text-xs text-slate-500 font-mono text-center p-4">
-                            Run watershed to view distance elevation map
-                          </div>
-                        )}
+                    <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 min-h-[350px]">
+                      {/* Left Panel */}
+                      <div className="flex flex-col bg-slate-900 rounded-xl p-2.5 border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono font-bold text-cyan-400 uppercase">
+                            PANEL A (LEFT)
+                          </span>
+                          <select
+                            value={dualLeftStage}
+                            onChange={(e) => setDualLeftStage(e.target.value)}
+                            className="bg-slate-800 text-slate-200 text-[11px] rounded px-2 py-0.5 border border-slate-700 font-mono"
+                          >
+                            {stages.map((s) => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex-1 flex items-center justify-center min-h-[220px]">
+                          {getStageImage(dualLeftStage) ? (
+                            <img
+                              src={getStageImage(dualLeftStage)}
+                              alt={stages.find((s) => s.id === dualLeftStage)?.label}
+                              className="max-h-64 max-w-full object-contain rounded"
+                            />
+                          ) : (
+                            <div className="text-xs text-slate-500 font-mono text-center p-4">
+                              Run watershed to view {stages.find((s) => s.id === dualLeftStage)?.short}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex flex-col items-center justify-center bg-slate-900 rounded-lg p-2 border border-slate-800">
-                        <span className="text-[10px] font-mono font-bold text-teal-400 mb-1">
-                          SEGMENTED BOUNDARIES OVERLAY
-                        </span>
-                        {currentResult?.images?.boundary_overlay ? (
-                          <img
-                            src={currentResult.images.boundary_overlay}
-                            alt="Watershed Boundaries"
-                            className="max-h-64 object-contain rounded"
-                          />
-                        ) : (
-                          <div className="text-xs text-slate-500 font-mono text-center p-4">
-                            Run watershed to view segmented coin dams
-                          </div>
-                        )}
+
+                      {/* Right Panel */}
+                      <div className="flex flex-col bg-slate-900 rounded-xl p-2.5 border border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-mono font-bold text-teal-400 uppercase">
+                            PANEL B (RIGHT)
+                          </span>
+                          <select
+                            value={dualRightStage}
+                            onChange={(e) => setDualRightStage(e.target.value)}
+                            className="bg-slate-800 text-slate-200 text-[11px] rounded px-2 py-0.5 border border-slate-700 font-mono"
+                          >
+                            {stages.map((s) => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex-1 flex items-center justify-center min-h-[220px]">
+                          {getStageImage(dualRightStage) ? (
+                            <img
+                              src={getStageImage(dualRightStage)}
+                              alt={stages.find((s) => s.id === dualRightStage)?.label}
+                              className="max-h-64 max-w-full object-contain rounded"
+                            />
+                          ) : (
+                            <div className="text-xs text-slate-500 font-mono text-center p-4">
+                              Run watershed to view {stages.find((s) => s.id === dualRightStage)?.short}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1425,6 +1623,7 @@ export const WatershedPage = () => {
           </div>
 
         </div>
+        </ErrorBoundary>
       )}
 
       {/* ========================================================== */}

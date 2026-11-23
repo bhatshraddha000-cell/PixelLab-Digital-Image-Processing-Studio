@@ -356,7 +356,41 @@ export const processWatershed = async (req, res) => {
       }
     }
 
-    // 7. Return comprehensive response to frontend
+    // 7. Enrich images map with academic contract property aliases
+    const enrichedImages = {
+      ...pyResult.images,
+      original: pyResult.images?.original,
+      originalImage: pyResult.images?.original,
+      grayscale: pyResult.images?.grayscale,
+      grayscaleImage: pyResult.images?.grayscale,
+      binary: pyResult.images?.binary,
+      binaryImage: pyResult.images?.binary,
+      opened: pyResult.images?.opened,
+      opening: pyResult.images?.opened,
+      openingImage: pyResult.images?.opened,
+      distance_transform: pyResult.images?.distance_transform,
+      distance_heatmap: pyResult.images?.distance_heatmap,
+      distanceTransform: pyResult.images?.distance_heatmap || pyResult.images?.distance_transform,
+      distanceTransformImage: pyResult.images?.distance_heatmap || pyResult.images?.distance_transform,
+      sure_fg: pyResult.images?.sure_fg,
+      sureForeground: pyResult.images?.sure_fg,
+      sureForegroundImage: pyResult.images?.sure_fg,
+      sure_bg: pyResult.images?.sure_bg,
+      sureBackground: pyResult.images?.sure_bg,
+      sureBackgroundImage: pyResult.images?.sure_bg,
+      unknown: pyResult.images?.unknown,
+      unknownRegion: pyResult.images?.unknown,
+      unknownRegionImage: pyResult.images?.unknown,
+      markers_vis: pyResult.images?.markers_vis,
+      markers: pyResult.images?.markers_vis,
+      markerVisualizationImage: pyResult.images?.markers_vis,
+      boundary_overlay: pyResult.images?.boundary_overlay,
+      segmented: pyResult.images?.segmented,
+      segmentation: pyResult.images?.boundary_overlay || pyResult.images?.segmented,
+      segmentedImage: pyResult.images?.boundary_overlay || pyResult.images?.segmented,
+    };
+
+    // 8. Return comprehensive response to frontend
     res.json({
       status: 'success',
       id: savedId,
@@ -366,7 +400,7 @@ export const processWatershed = async (req, res) => {
       evaluation: pyResult.evaluation,
       parameters: pyResult.parameters,
       metadata: pyResult.metadata,
-      images: pyResult.images,
+      images: enrichedImages,
       processingTimeMs: pyResult.processing_time_ms,
     });
   } catch (error) {

@@ -77,6 +77,25 @@ const SAMPLES_METADATA = [
       kNeighbors: 3,
     },
   },
+  {
+    id: 'test_validation_15_shapes',
+    name: '15 Independent Shapes Validation Suite',
+    category: 'Validation Benchmark',
+    filename: 'test_validation_15_shapes.png',
+    previewUrl: '/samples/classification/test_validation_15_shapes.png',
+    dimensions: '800 × 600 px',
+    shapeCount: 15,
+    shapes: ['Circle', 'Triangle', 'Square', 'Rectangle', 'Ellipse'],
+    description: 'Comprehensive 15-shape academic validation benchmark: 3 circles (small, medium, large), 3 triangles (equilateral, rotated right, rotated isosceles), 3 squares (axis-aligned, 45° diamond, 25° rotated), 3 rectangles (horizontal, vertical, 35° rotated), and 3 ellipses (horizontal, vertical, 45° rotated).',
+    recommendedParams: {
+      thresholdMethod: 'otsu',
+      polarity: 'bright_on_dark',
+      blurKernel: 3,
+      morphOperation: 'none',
+      minObjectArea: 80,
+      kNeighbors: 3,
+    },
+  },
 ];
 
 /**
@@ -439,7 +458,18 @@ export const processClassification = async (req, res) => {
       savedRecord = experimentDoc;
     }
 
-    // 7. Return comprehensive response
+    // 7. Normalize object payloads for robust camelCase and snake_case consumer compatibility
+    const normalizedObjects = (pyResult.objects || []).map((o) => ({
+      ...o,
+      predictedClass: o.predicted_class || o.predictedClass || 'unknown',
+      predicted_class: o.predicted_class || o.predictedClass || 'unknown',
+      aspectRatio: o.aspect_ratio ?? o.aspectRatio ?? 1.0,
+      aspect_ratio: o.aspect_ratio ?? o.aspectRatio ?? 1.0,
+      colorRgb: o.color_rgb || o.colorRgb || [148, 163, 184],
+      color_rgb: o.color_rgb || o.colorRgb || [148, 163, 184],
+    }));
+
+    // 8. Return comprehensive response
     res.json({
       status: 'success',
       data: {
@@ -449,9 +479,11 @@ export const processClassification = async (req, res) => {
         metadata: pyResult.metadata,
         parameters: pyResult.parameters,
         model_info: pyResult.model_info,
-        total_detected_objects: pyResult.total_detected_objects,
-        category_counts: pyResult.category_counts,
-        objects: pyResult.objects,
+        total_detected_objects: pyResult.total_detected_objects ?? normalizedObjects.length,
+        totalDetectedObjects: pyResult.total_detected_objects ?? normalizedObjects.length,
+        category_counts: pyResult.category_counts || {},
+        categoryCounts: pyResult.category_counts || {},
+        objects: normalizedObjects,
         images: {
           original: pyResult.images?.original || `/uploads/${originalFileRel}`,
           grayscale: pyResult.images?.grayscale,

@@ -33,6 +33,15 @@ os.makedirs(DATASETS_DIR, exist_ok=True)
 MODEL_FILE = os.path.join(MODELS_DIR, "knn_geometric_model.joblib")
 SCALER_FILE = os.path.join(MODELS_DIR, "knn_geometric_scaler.joblib")
 
+# Canonical feature ordering used across training, persistence, and inference
+CANONICAL_FEATURES = [
+    "circularity",
+    "rectangularity",
+    "aspect_ratio",
+    "vertices",
+    "compactness",
+]
+
 CATEGORY_COLORS = {
     "circle": (6, 182, 212),       # Cyan (RGB)
     "triangle": (239, 68, 68),     # Red
@@ -114,6 +123,13 @@ def extract_contour_descriptors(contour: np.ndarray) -> Dict[str, Any]:
     approx = cv2.approxPolyDP(contour, 0.04 * perimeter, True)
     vertices = len(approx)
 
+    # Invariant Hu moments (log-transformed Hu moment 1 for scale/rotation invariance)
+    if M["m00"] > 0:
+        hu = cv2.HuMoments(M).flatten()
+        hu_1 = round(float(-np.sign(hu[0]) * np.log10(abs(hu[0]) + 1e-12)), 4) if len(hu) > 0 else 0.0
+    else:
+        hu_1 = 0.0
+
     box_points = [list(map(lambda p: round(float(p), 1), pt)) for pt in cv2.boxPoints(min_rect)]
 
     return {
@@ -123,9 +139,11 @@ def extract_contour_descriptors(contour: np.ndarray) -> Dict[str, Any]:
         "circularity": circularity,
         "rectangularity": rectangularity,
         "aspect_ratio": aspect_ratio,
+        "aspectRatio": aspect_ratio,
         "vertices": vertices,
         "extent": extent,
         "solidity": solidity,
+        "hu_1": hu_1,
         "centroid": [cx, cy],
         "bbox": [bx, by, bw, bh],
         "min_rect": box_points,
@@ -136,27 +154,27 @@ def rule_based_fallback_classifier(descriptors: Dict[str, Any]) -> Tuple[str, fl
     Academic geometrical decision rule classifier used as a robust baseline
     or fallback when no trained model is loaded.
     """
-    circ = descriptors["circularity"]
-    rect = descriptors["rectangularity"]
-    ar = descriptors["aspect_ratio"]
-    v = descriptors["vertices"]
+    circ = descriptors.get("circularity", 0.0)
+    rect = descriptors.get("rectangularity", 0.0)
+    ar = descriptors.get("aspect_ratio", descriptors.get("aspectRatio", 1.0))
+    v = descriptors.get("vertices", 0)
 
     if v == 3 or (rect < 0.62 and circ < 0.65 and ar < 1.45):
-        return "triangle", 0.92
-    elif circ >= 0.90 and ar < 1.25:
-        return "circle", 0.95
+        return "triangle", 0.95
     elif rect >= 0.88:
-        if ar <= 1.20:
-            return "square", 0.90
+        if ar <= 1.25:
+            return "square", 0.94
         else:
-            return "rectangle", 0.92
-    elif circ >= 0.68 and ar >= 1.35:
-        return "ellipse", 0.88
-    elif rect >= 0.80 and ar > 1.30:
-        return "rectangle", 0.85
+            return "rectangle", 0.94
+    elif rect < 0.85:
+        if ar <= 1.25:
+            return "circle", 0.95
+        else:
+            return "ellipse", 0.92
     elif circ >= 0.80:
-        return "circle", 0.80
+        return "circle", 0.85
     else:
+        return "unknown", 0.50
         return "unknown", 0.60
 
 def segment_and_extract_objects(
@@ -224,7 +242,7 @@ def segment_and_extract_objects(
 
 def load_or_train_default_model(k: int = 3, feature_names: Optional[List[str]] = None) -> Tuple[Any, Any, List[str]]:
     """Loads existing trained model or trains a clean initial model on datasets."""
-    selected_features = feature_names or ["compactness", "circularity", "rectangularity", "aspect_ratio", "vertices"]
+    desired_features = feature_names or CANONICAL_FEATURES
 
     if os.path.exists(MODEL_FILE) and os.path.exists(SCALER_FILE):
         try:
@@ -232,27 +250,36 @@ def load_or_train_default_model(k: int = 3, feature_names: Optional[List[str]] =
             scaler = joblib.load(SCALER_FILE)
             # Verify feature names match
             if isinstance(model_data, dict) and "model" in model_data:
-                return model_data["model"], scaler, model_data.get("features", selected_features)
-            return model_data, scaler, selected_features
+                saved_features = model_data.get("features", CANONICAL_FEATURES)
+                if feature_names is None or feature_names == saved_features:
+                    return model_data["model"], scaler, saved_features
+            elif hasattr(model_data, "predict"):
+                return model_data, scaler, desired_features
         except Exception:
             pass
 
     # Train default model from local dataset
-    train_res = train_knn_model(k=k, feature_names=selected_features)
+    train_res = train_knn_model(k=k, feature_names=desired_features)
     scaler = joblib.load(SCALER_FILE)
     model_data = joblib.load(MODEL_FILE)
-    return model_data["model"], scaler, selected_features
+    saved_feats = model_data.get("features", desired_features) if isinstance(model_data, dict) else desired_features
+    return model_data.get("model", model_data) if isinstance(model_data, dict) else model_data, scaler, saved_feats
 
 def build_feature_vector(descriptors: Dict[str, Any], feature_names: List[str]) -> List[float]:
     """Extracts ordered feature vector based on selected feature names."""
     vec = []
     for f in feature_names:
-        vec.append(float(descriptors.get(f, 0.0)))
+        val = descriptors.get(f)
+        if val is None and f == "aspect_ratio":
+            val = descriptors.get("aspectRatio", 1.0)
+        elif val is None and f == "hu_1":
+            val = descriptors.get("hu1", 0.0)
+        vec.append(float(val if val is not None else 0.0))
     return vec
 
 def train_knn_model(
     k: int = 3,
-    test_ratio: float = 0.25,
+    test_ratio: float = 0.20,
     feature_names: Optional[List[str]] = None,
     dataset_dir: Optional[str] = None
 ) -> Dict[str, Any]:
@@ -261,7 +288,7 @@ def train_knn_model(
     Computes genuine hold-out evaluation metrics: Accuracy, Precision, Recall, F1, Confusion Matrix.
     """
     d_dir = dataset_dir or DATASETS_DIR
-    selected_features = feature_names or ["compactness", "circularity", "rectangularity", "aspect_ratio", "vertices"]
+    selected_features = feature_names or CANONICAL_FEATURES
 
     categories = ["circle", "triangle", "square", "rectangle", "ellipse"]
     X, y = [], []
@@ -340,8 +367,39 @@ def train_knn_model(
         }
 
     # Save model and scaler to disk
-    joblib.dump({"model": knn, "features": selected_features, "categories": categories}, MODEL_FILE)
+    joblib.dump({
+        "model": knn,
+        "features": selected_features,
+        "categories": categories,
+        "version": "2.0.0",
+        "k": k_val,
+    }, MODEL_FILE)
     joblib.dump(scaler, SCALER_FILE)
+
+    return {
+        "status": "success",
+        "algorithm": "K-Nearest Neighbors (KNN)",
+        "k": k_val,
+        "selected_features": selected_features,
+        "features_used": selected_features,
+        "total_samples": total_samples,
+        "train_samples": len(X_train),
+        "test_samples": len(X_test),
+        "categories": categories,
+        "accuracy": acc,
+        "classification_error": cls_err,
+        "precision_macro": prec_macro,
+        "recall_macro": rec_macro,
+        "f1_macro": f1_macro,
+        "precision_weighted": prec_weighted,
+        "recall_weighted": rec_weighted,
+        "f1_weighted": f1_weighted,
+        "confusion_matrix": {
+            "labels": labels_order,
+            "matrix": cm,
+        },
+        "per_category": per_category,
+    }
 
     return {
         "status": "success",
@@ -423,12 +481,12 @@ def process_classification_pipeline(
     )
 
     # 2. Load model & scaler
-    selected_features = feature_names or ["compactness", "circularity", "rectangularity", "aspect_ratio", "vertices"]
     knn_model = None
     scaler = None
+    active_features = CANONICAL_FEATURES
 
     try:
-        knn_model, scaler, active_features = load_or_train_default_model(k=k_neighbors, feature_names=selected_features)
+        knn_model, scaler, active_features = load_or_train_default_model(k=k_neighbors, feature_names=feature_names)
     except Exception as e:
         print("Warning: could not load/train KNN model, using fallback:", e)
 
@@ -437,26 +495,37 @@ def process_classification_pipeline(
     category_counts: Dict[str, int] = {}
 
     for obj in objects:
-        c_raw = obj.pop("contour_raw") # remove raw contour from json payload
+        c_raw = obj.pop("contour_raw", None) # remove raw contour from json payload
 
         pred_class = "unknown"
-        confidence = 0.50
+        neighbor_agreement = 0.50
+        is_uncertain = False
 
         if knn_model is not None and scaler is not None:
-            vec = build_feature_vector(obj, selected_features)
+            # Strictly use active_features associated with the fitted scaler and model
+            vec = build_feature_vector(obj, active_features)
             vec_scaled = scaler.transform([vec])
             pred_class = str(knn_model.predict(vec_scaled)[0])
 
             # Compute neighbor-vote proportion
             probs = knn_model.predict_proba(vec_scaled)[0]
             class_idx = list(knn_model.classes_).index(pred_class)
-            confidence = round(float(probs[class_idx]), 2)
+            neighbor_agreement = round(float(probs[class_idx]), 2)
+
+            # Flag uncertainty if vote agreement < 0.60 (e.g. split votes among neighbors)
+            if neighbor_agreement < 0.60:
+                is_uncertain = True
         else:
             # Academic fallback
-            pred_class, confidence = rule_based_fallback_classifier(obj)
+            pred_class, neighbor_agreement = rule_based_fallback_classifier(obj)
 
         obj["predicted_class"] = pred_class
-        obj["confidence"] = confidence
+        obj["predictedClass"] = pred_class
+        obj["confidence"] = neighbor_agreement
+        obj["neighbor_agreement"] = neighbor_agreement
+        obj["neighborAgreement"] = neighbor_agreement
+        obj["is_uncertain"] = is_uncertain
+        obj["isUncertain"] = is_uncertain
         obj["color_rgb"] = CATEGORY_COLORS.get(pred_class, (148, 163, 184))
 
         category_counts[pred_class] = category_counts.get(pred_class, 0) + 1
@@ -480,7 +549,7 @@ def process_classification_pipeline(
         bx, by, bw, bh = obj["bbox"]
         cx, cy = int(obj["centroid"][0]), int(obj["centroid"][1])
         c_name = obj["predicted_class"]
-        conf = obj["confidence"]
+        vote_agr = obj["neighbor_agreement"]
         rgb_col = obj["color_rgb"]
         bgr_col = (rgb_col[2], rgb_col[1], rgb_col[0])
 
@@ -505,7 +574,10 @@ def process_classification_pipeline(
         cv2.drawMarker(annotated_img, (cx, cy), (0, 255, 0), cv2.MARKER_CROSS, 8, 1)
 
         # Label tag
-        tag = f"#{obj['id']} {c_name.capitalize()} ({int(conf * 100)}%)"
+        pct = int(vote_agr * 100)
+        tag = f"#{obj['id']} {c_name.capitalize()} ({pct}%)"
+        if obj["is_uncertain"]:
+            tag += " [?]"
         cv2.putText(
             annotated_img,
             tag,
@@ -549,13 +621,14 @@ def process_classification_pipeline(
             "morph_operation": morph_operation,
             "min_object_area": min_object_area,
             "k_neighbors": k_neighbors,
-            "features_used": selected_features,
+            "features_used": active_features,
         },
         "model_info": {
             "algorithm": "K-Nearest Neighbors (KNN)",
             "k": k_neighbors,
-            "features": selected_features,
+            "features": active_features,
             "scaler": "StandardScaler",
+            "version": "2.0.0",
         },
         "objects": classified_objects,
         "images": images,

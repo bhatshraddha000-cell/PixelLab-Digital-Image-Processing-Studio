@@ -47,6 +47,7 @@ import {
 } from 'recharts';
 import ImageSplitSlider from '../components/ImageSplitSlider';
 import MathFormula from '../components/MathFormula';
+import ErrorBoundary from '../components/ErrorBoundary';
 import apiService from '../services/api';
 import {
   exportClassificationCSV,
@@ -279,9 +280,30 @@ export const ClassificationPage = () => {
       const response = await apiService.classification.process(formData);
 
       if (response && response.status === 'success') {
-        setCurrentResult(response.data);
-        if (response.data.objects && response.data.objects.length > 0) {
-          setSelectedObjectId(response.data.objects[0].id);
+        const rawObjects = response.data?.objects || [];
+        const normalizedObjects = rawObjects.map((o) => ({
+          ...o,
+          predictedClass: o.predictedClass || o.predicted_class || 'unknown',
+          predicted_class: o.predicted_class || o.predictedClass || 'unknown',
+          aspectRatio: o.aspectRatio ?? o.aspect_ratio ?? 1.0,
+          aspect_ratio: o.aspect_ratio ?? o.aspectRatio ?? 1.0,
+          circularity: Number(o.circularity) || 0,
+          compactness: Number(o.compactness) || 0,
+          rectangularity: Number(o.rectangularity) || 0,
+          area: Number(o.area) || 0,
+          perimeter: Number(o.perimeter) || 0,
+          vertices: Number(o.vertices) || 0,
+        }));
+
+        setCurrentResult({
+          ...response.data,
+          objects: normalizedObjects,
+        });
+
+        if (normalizedObjects.length > 0) {
+          setSelectedObjectId(normalizedObjects[0].id);
+        } else {
+          setSelectedObjectId(null);
         }
         loadHistory();
       } else {
@@ -336,21 +358,24 @@ export const ClassificationPage = () => {
 
   // Currently selected object
   const selectedObject = useMemo(() => {
-    if (!currentResult || !currentResult.objects) return null;
+    if (!currentResult || !currentResult.objects || currentResult.objects.length === 0) return null;
     return currentResult.objects.find((o) => o.id === selectedObjectId) || currentResult.objects[0] || null;
   }, [currentResult, selectedObjectId]);
 
   // Chart data: Object descriptors comparison
   const descriptorsChartData = useMemo(() => {
-    if (!currentResult || !currentResult.objects) return [];
-    return currentResult.objects.map((o) => ({
-      name: `#${o.id} ${o.predictedClass.slice(0, 4)}`,
-      id: o.id,
-      circularity: o.circularity,
-      compactness: o.compactness,
-      rectangularity: o.rectangularity,
-      aspectRatio: o.aspectRatio,
-    }));
+    if (!currentResult || !currentResult.objects || currentResult.objects.length === 0) return [];
+    return currentResult.objects.map((o) => {
+      const pred = String(o.predictedClass || o.predicted_class || 'unknown');
+      return {
+        name: `#${o.id} ${pred.slice(0, 4)}`,
+        id: o.id,
+        circularity: Number(o.circularity) || 0,
+        compactness: Number(o.compactness) || 0,
+        rectangularity: Number(o.rectangularity) || 0,
+        aspectRatio: Number(o.aspectRatio ?? o.aspect_ratio) || 1.0,
+      };
+    });
   }, [currentResult]);
 
   // Radar chart data for selected object
@@ -359,31 +384,31 @@ export const ClassificationPage = () => {
     return [
       {
         subject: 'Circularity',
-        value: Math.min(1.5, selectedObject.circularity || 0),
+        value: Math.min(1.5, Number(selectedObject.circularity) || 0),
         circleIdeal: 1.0,
         squareIdeal: 0.78,
       },
       {
         subject: 'Compactness',
-        value: Math.min(2.0, selectedObject.compactness || 0),
+        value: Math.min(2.0, Number(selectedObject.compactness) || 0),
         circleIdeal: 1.0,
         squareIdeal: 1.28,
       },
       {
         subject: 'Rectangularity',
-        value: selectedObject.rectangularity || 0,
+        value: Number(selectedObject.rectangularity) || 0,
         circleIdeal: 0.785,
         squareIdeal: 1.0,
       },
       {
         subject: 'Aspect Ratio',
-        value: Math.min(2.5, selectedObject.aspectRatio || 1.0),
+        value: Math.min(2.5, Number(selectedObject.aspectRatio ?? selectedObject.aspect_ratio) || 1.0),
         circleIdeal: 1.0,
         squareIdeal: 1.0,
       },
       {
         subject: 'Solidity',
-        value: selectedObject.solidity || 0.95,
+        value: Number(selectedObject.solidity) || 0.95,
         circleIdeal: 1.0,
         squareIdeal: 1.0,
       },
@@ -403,6 +428,21 @@ export const ClassificationPage = () => {
 
   // Load experiment from history into viewer
   const handleLoadFromHistory = (exp) => {
+    const rawObjects = exp.objects || [];
+    const normalizedObjects = rawObjects.map((o) => ({
+      ...o,
+      predictedClass: o.predictedClass || o.predicted_class || 'unknown',
+      predicted_class: o.predicted_class || o.predictedClass || 'unknown',
+      aspectRatio: o.aspectRatio ?? o.aspect_ratio ?? 1.0,
+      aspect_ratio: o.aspect_ratio ?? o.aspectRatio ?? 1.0,
+      circularity: Number(o.circularity) || 0,
+      compactness: Number(o.compactness) || 0,
+      rectangularity: Number(o.rectangularity) || 0,
+      area: Number(o.area) || 0,
+      perimeter: Number(o.perimeter) || 0,
+      vertices: Number(o.vertices) || 0,
+    }));
+
     setCurrentResult({
       id: exp._id,
       name: exp.name,
@@ -410,9 +450,9 @@ export const ClassificationPage = () => {
       metadata: exp.metadata,
       parameters: exp.parameters,
       model_info: exp.results?.modelInfo || {},
-      total_detected_objects: exp.results?.totalDetectedObjects || exp.objects?.length || 0,
+      total_detected_objects: exp.results?.totalDetectedObjects ?? normalizedObjects.length,
       category_counts: exp.results?.categoryCounts || {},
-      objects: exp.objects || [],
+      objects: normalizedObjects,
       images: {
         original: exp.originalImagePath,
         binary: exp.segmentedImagePath,
@@ -421,8 +461,10 @@ export const ClassificationPage = () => {
         bounding_boxes: exp.boundingBoxesImagePath || exp.annotatedImagePath,
       },
     });
-    if (exp.objects && exp.objects.length > 0) {
-      setSelectedObjectId(exp.objects[0].id);
+    if (normalizedObjects.length > 0) {
+      setSelectedObjectId(normalizedObjects[0].id);
+    } else {
+      setSelectedObjectId(null);
     }
     setActiveTab('workspace');
   };
@@ -561,6 +603,7 @@ export const ClassificationPage = () => {
       {/* TAB 1: INTERACTIVE CLASSIFICATION STUDIO WORKSPACE */}
       {/* ========================================================== */}
       {activeTab === 'workspace' && (
+        <ErrorBoundary title="Classification Workspace Error">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* LEFT COLUMN: CONTROLS & BENCHMARKS (4 cols) */}
           <div className="lg:col-span-4 space-y-6">
@@ -1149,6 +1192,22 @@ export const ClassificationPage = () => {
               </div>
             )}
 
+            {/* Empty Object Results Banner */}
+            {currentResult && (!currentResult.objects || currentResult.objects.length === 0) && (
+              <div className="p-6 rounded-3xl bg-amber-50/90 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 text-center space-y-3">
+                <div className="inline-flex p-3 rounded-2xl bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <h3 className="text-base font-bold text-amber-900 dark:text-amber-200">
+                  No Geometric Objects Detected
+                </h3>
+                <p className="text-xs text-amber-700 dark:text-amber-300 max-w-lg mx-auto">
+                  Segmentation found 0 objects satisfying the minimum area threshold ({minObjectArea} px).
+                  Try decreasing the <strong>Minimum Object Area</strong> slider, adjusting the <strong>Threshold Method</strong>, or switching <strong>Polarity</strong>.
+                </p>
+              </div>
+            )}
+
             {/* Selected Object Inspector & Radar Profile */}
             {selectedObject && (
               <div className="p-6 rounded-3xl bg-white dark:bg-navy-900/80 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
@@ -1156,14 +1215,19 @@ export const ClassificationPage = () => {
                   <div className="flex items-center space-x-3">
                     <span
                       className={`text-sm font-extrabold px-3 py-1 rounded-xl ${
-                        CATEGORY_COLORS[selectedObject.predictedClass]?.badge || 'bg-slate-500 text-white'
+                        CATEGORY_COLORS[selectedObject.predictedClass || selectedObject.predicted_class]?.badge || 'bg-slate-500 text-white'
                       }`}
                     >
-                      Object #{selectedObject.id}: {selectedObject.predictedClass.toUpperCase()}
+                      Object #{selectedObject.id}: {(selectedObject.predictedClass || selectedObject.predicted_class || 'unknown').toUpperCase()}
                     </span>
                     <span className="text-xs font-mono font-semibold text-slate-600 dark:text-slate-400">
-                      Confidence: {Math.round((selectedObject.confidence || 0) * 100)}%
+                      Neighbor Agreement: {Math.round((selectedObject.neighborAgreement ?? selectedObject.neighbor_agreement ?? selectedObject.confidence ?? 0) * 100)}%
                     </span>
+                    {(selectedObject.isUncertain || selectedObject.is_uncertain) && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-400/30 flex items-center gap-1">
+                        <AlertTriangle className="w-3 h-3 inline" /> Uncertain (Close Votes)
+                      </span>
+                    )}
                   </div>
                   <span className="text-xs font-mono text-slate-600 dark:text-slate-400">
                     Centroid: ({selectedObject.centroid?.[0]}, {selectedObject.centroid?.[1]})
@@ -1225,7 +1289,7 @@ export const ClassificationPage = () => {
                     <div className="p-3 rounded-2xl bg-slate-50 dark:bg-navy-800 border border-slate-200 dark:border-slate-700">
                       <div className="text-[10px] text-slate-600 dark:text-slate-400 font-mono">Aspect Ratio</div>
                       <div className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
-                        {selectedObject.aspectRatio}
+                        {selectedObject.aspectRatio ?? selectedObject.aspect_ratio}
                       </div>
                       <div className="text-[9px] text-slate-600 dark:text-slate-400">Square/Circle = 1.00</div>
                     </div>
@@ -1260,8 +1324,8 @@ export const ClassificationPage = () => {
                         <Radar
                           name="Detected Object"
                           dataKey="value"
-                          stroke={CATEGORY_COLORS[selectedObject.predictedClass]?.hex || '#06b6d4'}
-                          fill={CATEGORY_COLORS[selectedObject.predictedClass]?.hex || '#06b6d4'}
+                          stroke={CATEGORY_COLORS[selectedObject.predictedClass || selectedObject.predicted_class]?.hex || '#06b6d4'}
+                          fill={CATEGORY_COLORS[selectedObject.predictedClass || selectedObject.predicted_class]?.hex || '#06b6d4'}
                           fillOpacity={0.4}
                         />
                       </RadarChart>
@@ -1290,7 +1354,7 @@ export const ClassificationPage = () => {
                       <tr>
                         <th className="py-2 px-3">ID</th>
                         <th className="py-2 px-3">Class</th>
-                        <th className="py-2 px-3">Confidence</th>
+                        <th className="py-2 px-3">Neighbor Agreement</th>
                         <th className="py-2 px-3">Circularity</th>
                         <th className="py-2 px-3">Compactness</th>
                         <th className="py-2 px-3">Rectangularity</th>
@@ -1302,7 +1366,8 @@ export const ClassificationPage = () => {
                     <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-mono">
                       {currentResult.objects.map((obj) => {
                         const isSelected = selectedObjectId === obj.id;
-                        const col = CATEGORY_COLORS[obj.predictedClass] || CATEGORY_COLORS.unknown;
+                        const objClass = obj.predictedClass || obj.predicted_class || 'unknown';
+                        const col = CATEGORY_COLORS[objClass] || CATEGORY_COLORS.unknown;
                         return (
                           <tr
                             key={obj.id}
@@ -1316,18 +1381,25 @@ export const ClassificationPage = () => {
                             <td className="py-2 px-3">#{obj.id}</td>
                             <td className="py-2 px-3">
                               <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${col.badge}`}>
-                                {obj.predictedClass.toUpperCase()}
+                                {objClass.toUpperCase()}
                               </span>
                             </td>
                             <td className="py-2 px-3 text-slate-700 dark:text-slate-300">
-                              {Math.round((obj.confidence || 0) * 100)}%
+                              <span className="flex items-center gap-1">
+                                <span>{Math.round((obj.neighborAgreement ?? obj.neighbor_agreement ?? obj.confidence ?? 0) * 100)}%</span>
+                                {(obj.isUncertain || obj.is_uncertain) && (
+                                  <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/20 text-amber-500 font-bold" title="Uncertain classification (split neighbor votes)">
+                                    [?]
+                                  </span>
+                                )}
+                              </span>
                             </td>
                             <td className="py-2 px-3 text-cyan-600 dark:text-cyan-400 font-bold">{obj.circularity}</td>
                             <td className="py-2 px-3 text-amber-600 dark:text-amber-400">{obj.compactness}</td>
                             <td className="py-2 px-3 text-emerald-600 dark:text-emerald-400 font-bold">
                               {obj.rectangularity}
                             </td>
-                            <td className="py-2 px-3 text-slate-700 dark:text-slate-300">{obj.aspectRatio}</td>
+                            <td className="py-2 px-3 text-slate-700 dark:text-slate-300">{obj.aspectRatio ?? obj.aspect_ratio}</td>
                             <td className="py-2 px-3 text-purple-600 dark:text-purple-400">{obj.vertices}</td>
                             <td className="py-2 px-3 text-slate-600 dark:text-slate-400">{obj.area}</td>
                           </tr>
@@ -1368,6 +1440,7 @@ export const ClassificationPage = () => {
             )}
           </div>
         </div>
+        </ErrorBoundary>
       )}
 
       {/* ========================================================== */}

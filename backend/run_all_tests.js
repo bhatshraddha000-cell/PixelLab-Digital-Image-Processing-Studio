@@ -29,9 +29,10 @@ if (!pyAlreadyRunning) {
   console.log('Spawning Python uvicorn microservice...');
   pyProcess = spawn(
     pythonExe,
-    ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000'],
+    ['-u', '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', '8000', '--app-dir', path.join(rootDir, 'opencv-service')],
     {
       cwd: path.join(rootDir, 'opencv-service'),
+      env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONPATH: path.join(rootDir, 'opencv-service') },
       stdio: 'pipe',
     }
   );
@@ -54,28 +55,44 @@ if (!nodeAlreadyRunning) {
   console.log('⚡ Express backend already running on port 5000');
 }
 
+let cleanedUp = false;
 function cleanup() {
+  if (cleanedUp) return;
+  cleanedUp = true;
   console.log('\n🧹 Cleaning up test processes...');
   if (pyProcess) {
-    try { pyProcess.kill('SIGTERM'); } catch { }
+    try { pyProcess.kill(); } catch { }
+    pyProcess = null;
   }
   if (nodeProcess) {
-    try { nodeProcess.kill('SIGTERM'); } catch { }
+    try { nodeProcess.kill(); } catch { }
+    nodeProcess = null;
   }
 }
 
 process.on('SIGINT', cleanup);
 process.on('SIGTERM', cleanup);
-process.on('exit', cleanup);
 
 // Poll for health
 let ready = false;
-for (let i = 0; i < 20; i++) {
+let activePort = 5000;
+
+for (let i = 0; i < 25; i++) {
   if (i > 0) await new Promise((r) => setTimeout(r, 800));
   try {
     const pyRes = await fetch('http://127.0.0.1:8000/health');
-    const nodeRes = await fetch('http://127.0.0.1:5000/api/health');
-    if (pyRes.ok && nodeRes.ok) {
+    let nodeRes = null;
+    try {
+      nodeRes = await fetch('http://127.0.0.1:5000/api/health');
+      if (nodeRes.ok) activePort = 5000;
+    } catch {
+      try {
+        nodeRes = await fetch('http://127.0.0.1:5001/api/health');
+        if (nodeRes.ok) activePort = 5001;
+      } catch { }
+    }
+
+    if (pyRes.ok && nodeRes && nodeRes.ok) {
       ready = true;
       break;
     }
@@ -83,12 +100,13 @@ for (let i = 0; i < 20; i++) {
 }
 
 if (!ready) {
-  console.error('❌ Failed to connect to services within 16s.');
+  console.error('❌ Failed to connect to services within 20s.');
   cleanup();
   process.exit(1);
 }
 
-console.log('✅ Both microservices online! Running Module 02 & Module 03 test suites...\n');
+console.log(`✅ Both microservices online! (Express on port ${activePort}, FastAPI on 8000)`);
+console.log('Running all integration and validation test suites...\n');
 
 try {
   const { spawnSync } = await import('child_process');
@@ -97,7 +115,7 @@ try {
   const testRun2 = spawnSync('node', ['test_morphology_integration.js'], {
     cwd: __dirname,
     stdio: 'inherit',
-    env: { ...process.env, TEST_PORT: '5000' },
+    env: { ...process.env, TEST_PORT: String(activePort) },
   });
 
   if (testRun2.status !== 0) {
@@ -110,7 +128,7 @@ try {
   const testRun3 = spawnSync('node', ['test_watershed_integration.js'], {
     cwd: __dirname,
     stdio: 'inherit',
-    env: { ...process.env, TEST_PORT: '5000' },
+    env: { ...process.env, TEST_PORT: String(activePort) },
   });
 
   if (testRun3.status !== 0) {
@@ -123,11 +141,24 @@ try {
   const testRun4 = spawnSync('node', ['test_classification_integration.js'], {
     cwd: __dirname,
     stdio: 'inherit',
-    env: { ...process.env, TEST_PORT: '5000' },
+    env: { ...process.env, TEST_PORT: String(activePort) },
+  });
+
+  if (testRun4.status !== 0) {
+    console.error('❌ Module 04 integration test suite failed!');
+    cleanup();
+    process.exit(testRun4.status || 1);
+  }
+
+  console.log('\n▶️ Running Module 04 (15 Shapes Validation) Suite...');
+  const testRun5 = spawnSync('node', ['test_classification_15_validation.js'], {
+    cwd: __dirname,
+    stdio: 'inherit',
+    env: { ...process.env, TEST_PORT: String(activePort), API_BASE_URL: `http://127.0.0.1:${activePort}/api` },
   });
 
   cleanup();
-  process.exit(testRun4.status || 0);
+  process.exit(testRun5.status || 0);
 } catch (err) {
   console.error('Test execution error:', err);
   cleanup();
