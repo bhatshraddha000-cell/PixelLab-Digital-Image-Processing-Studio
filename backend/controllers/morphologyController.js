@@ -389,7 +389,19 @@ export const processMorphology = async (req, res) => {
       }
     }
 
-    // 7. Return comprehensive response to frontend
+    // 7. Enrich images map with canonical stage contract aliases
+    const enrichedImages = {
+      ...pyResult.images,
+      originalImage: pyResult.images?.original || null,
+      grayscaleImage: pyResult.images?.grayscale || null,
+      binaryImage: pyResult.images?.binary || null,
+      erodedImage: pyResult.images?.eroded || null,
+      dilatedImage: pyResult.images?.dilated || null,
+      openingImage: pyResult.images?.opened || null,
+      labeledImage: pyResult.images?.labeled || null,
+    };
+
+    // 8. Return comprehensive response to frontend
     res.json({
       status: 'success',
       id: savedId,
@@ -401,7 +413,7 @@ export const processMorphology = async (req, res) => {
       parameters: pyResult.parameters,
       metadata: pyResult.metadata,
       histograms: pyResult.histograms || null,
-      images: pyResult.images,
+      images: enrichedImages,
       processingTimeMs: pyResult.processing_time_ms,
     });
   } catch (error) {

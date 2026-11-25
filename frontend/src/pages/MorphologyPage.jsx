@@ -76,7 +76,11 @@ export const MorphologyPage = () => {
   const [errorMessage, setErrorMessage] = useState(null);
   const [currentResult, setCurrentResult] = useState(null);
   const [viewMode, setViewMode] = useState('split'); // 'split' | 'single' | 'sideBySide'
-  const [activeStage, setActiveStage] = useState('labeled'); // 'original' | 'grayscale' | 'binary' | 'eroded' | 'dilated' | 'opened' | 'labeled'
+  const [selectedStage, setSelectedStage] = useState('separatedObjects'); // 'original' | 'grayscale' | 'binary' | 'erosion' | 'dilation' | 'opening' | 'separatedObjects'
+  const [leftStage, setLeftStage] = useState('original');
+  const [rightStage, setRightStage] = useState('separatedObjects');
+  const [isZoomModalOpen, setIsZoomModalOpen] = useState(false);
+  const stageButtonRefs = useRef({});
 
   // Structuring element comparison experiment state
   const [isRunningComparison, setIsRunningComparison] = useState(false);
@@ -118,6 +122,11 @@ export const MorphologyPage = () => {
     setSourceType('sample');
     setInputImageFile(null);
     setInputPreviewUrl(sample.previewUrl);
+    setCurrentResult(null);
+    setErrorMessage(null);
+    setSelectedStage('original');
+    setLeftStage('original');
+    setRightStage('separatedObjects');
     setManualCount(sample.manualCount || null);
     setImageMeta({
       width: parseInt(sample.dimensions.split('×')[0], 10) || 500,
@@ -154,6 +163,10 @@ export const MorphologyPage = () => {
     setInputImageFile(file);
     const objectUrl = URL.createObjectURL(file);
     setInputPreviewUrl(objectUrl);
+    setCurrentResult(null);
+    setSelectedStage('original');
+    setLeftStage('original');
+    setRightStage('separatedObjects');
 
     const img = new Image();
     img.onload = () => {
@@ -201,6 +214,9 @@ export const MorphologyPage = () => {
 
       const result = await apiService.morphology.process(formData);
       setCurrentResult(result);
+      if (selectedStage === 'original') {
+        setSelectedStage('separatedObjects');
+      }
       loadHistory();
     } catch (err) {
       console.error('Morphology execution error:', err);
@@ -292,16 +308,80 @@ export const MorphologyPage = () => {
     document.body.removeChild(a);
   };
 
-  // Available image stages
+  // Canonical 7-stage configuration mapping stable IDs to OpenCV/Express image keys
   const stages = [
-    { id: 'original', label: '1. Original Coin Image' },
-    { id: 'grayscale', label: '2. Grayscale Image' },
-    { id: 'binary', label: '3. Binary Mask' },
-    { id: 'eroded', label: '4. Erosion Result' },
-    { id: 'dilated', label: '5. Dilation Result' },
-    { id: 'opened', label: '6. Separated Objects' },
-    { id: 'labeled', label: '7. Connected Components' },
+    {
+      id: 'original',
+      label: '1. Original Coin Image',
+      imageKey: 'original',
+      aliasKey: 'originalImage',
+      description: 'Original uploaded or selected benchmark photograph prior to grayscale conversion.',
+    },
+    {
+      id: 'grayscale',
+      label: '2. Grayscale Image',
+      imageKey: 'grayscale',
+      aliasKey: 'grayscaleImage',
+      description: 'Single-channel luminance representation converted via cv2.cvtColor().',
+    },
+    {
+      id: 'binary',
+      label: '3. Binary Mask',
+      imageKey: 'binary',
+      aliasKey: 'binaryImage',
+      description: 'Thresholded foreground mask (white coins on black background) before morphological operations.',
+    },
+    {
+      id: 'erosion',
+      label: '4. Erosion Result',
+      imageKey: 'eroded',
+      aliasKey: 'erodedImage',
+      description: 'Output of cv2.erode() severing narrow touching bridges between adjacent coins.',
+    },
+    {
+      id: 'dilation',
+      label: '5. Dilation Result',
+      imageKey: 'dilated',
+      aliasKey: 'dilatedImage',
+      description: 'Output of cv2.dilate() restoring object boundaries after erosion.',
+    },
+    {
+      id: 'opening',
+      label: '6. Morphological Opening',
+      imageKey: 'opened',
+      aliasKey: 'openingImage',
+      description: 'Output of cv2.morphologyEx(MORPH_OPEN) removing small foreground noise while preserving shape.',
+    },
+    {
+      id: 'separatedObjects',
+      label: '7. Final Separated Objects',
+      imageKey: 'labeled',
+      aliasKey: 'labeledImage',
+      description: 'Connected-component labeled visualization with distinct object hues, bounding boxes, and IDs.',
+    },
   ];
+
+  const getStageMeta = (stageId) => stages.find((s) => s.id === stageId) || stages[0];
+
+  const getStageImage = (stageId) => {
+    const meta = getStageMeta(stageId);
+    if (stageId === 'original') {
+      return currentResult?.images?.originalImage || currentResult?.images?.original || inputPreviewUrl || null;
+    }
+    if (!currentResult?.images) return null;
+    return currentResult.images[meta.aliasKey] || currentResult.images[meta.imageKey] || null;
+  };
+
+  const handleSelectStage = (stageId) => {
+    setSelectedStage(stageId);
+    if (viewMode === 'split' && stageId !== leftStage) {
+      setRightStage(stageId);
+    }
+    const btnEl = stageButtonRefs.current?.[stageId];
+    if (btnEl && typeof btnEl.scrollIntoView === 'function') {
+      btnEl.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  };
 
   return (
     <div className="py-6 sm:py-8 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-8">
@@ -800,40 +880,110 @@ export const MorphologyPage = () => {
                   </div>
                 </div>
 
-                {/* Stage Selector Pills */}
-                <div className="flex items-center space-x-1 overflow-x-auto pb-1 text-[11px] scrollbar-thin">
-                  {stages.map((stg) => (
-                    <button
-                      key={stg.id}
-                      type="button"
-                      onClick={() => setActiveStage(stg.id)}
-                      disabled={!currentResult && stg.id !== 'original'}
-                      className={`px-2.5 py-1 rounded-lg whitespace-nowrap font-medium transition-all ${
-                        activeStage === stg.id
-                          ? 'bg-teal-600 text-white font-bold shadow-sm'
-                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40'
-                      }`}
-                    >
-                      {stg.label}
-                    </button>
-                  ))}
+                {/* Stage Selector Pills (Accessible, Horizontally Scrollable) */}
+                <div
+                  role="tablist"
+                  aria-label="Morphological Processing Stages"
+                  className="flex items-center space-x-1.5 overflow-x-auto pb-2 pt-0.5 text-[11px] scrollbar-thin"
+                >
+                  {stages.map((stg) => {
+                    const isSelected = selectedStage === stg.id;
+                    const isDisabled = !currentResult && stg.id !== 'original';
+                    return (
+                      <button
+                        key={stg.id}
+                        ref={(el) => {
+                          stageButtonRefs.current[stg.id] = el;
+                        }}
+                        type="button"
+                        role="tab"
+                        aria-selected={isSelected}
+                        onClick={() => handleSelectStage(stg.id)}
+                        disabled={isDisabled}
+                        className={`px-2.5 py-1.5 rounded-lg whitespace-nowrap font-medium transition-all focus:outline-none focus:ring-2 focus:ring-teal-500 ${
+                          isSelected
+                            ? 'bg-teal-600 text-white font-bold shadow-sm'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed'
+                        }`}
+                      >
+                        {stg.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Active Stage Title & Description */}
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 text-xs">
+                  <div className="min-w-0">
+                    <span className="font-bold text-slate-900 dark:text-white">
+                      {getStageMeta(selectedStage).label}
+                    </span>
+                    <span className="text-slate-600 dark:text-slate-400 ml-2 text-[11px]">
+                      {getStageMeta(selectedStage).description}
+                    </span>
+                  </div>
+                  <div className="flex items-center space-x-2 shrink-0 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                    <span>
+                      {currentResult?.metadata?.width || imageMeta.width} × {currentResult?.metadata?.height || imageMeta.height} px
+                    </span>
+                    {getStageImage(selectedStage) && (
+                      <button
+                        type="button"
+                        onClick={() => setIsZoomModalOpen(true)}
+                        title="Zoom / Preview Stage"
+                        className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-800 text-teal-600 dark:text-teal-400"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Display Canvas Area */}
-                <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-200 dark:border-slate-800 min-h-[340px] flex items-center justify-center">
+                <div className="relative rounded-xl overflow-hidden bg-slate-950 border border-slate-200 dark:border-slate-800 min-h-[340px] flex flex-col justify-center">
                   
                   {/* View Mode: Split Slider */}
                   {viewMode === 'split' && (
-                    <div className="w-full">
+                    <div className="w-full space-y-2">
+                      <div className="grid grid-cols-2 gap-2 px-2.5 pt-2.5 text-[11px] font-mono">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-slate-400 shrink-0">Left:</span>
+                          <select
+                            value={leftStage}
+                            onChange={(e) => setLeftStage(e.target.value)}
+                            className="w-full px-2 py-1 rounded-lg bg-slate-900 text-slate-200 border border-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                          >
+                            {stages.map((s) => (
+                              <option key={s.id} value={s.id} disabled={!currentResult && s.id !== 'original'}>
+                                {s.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-teal-400 shrink-0">Right:</span>
+                          <select
+                            value={rightStage}
+                            onChange={(e) => {
+                              setRightStage(e.target.value);
+                              setSelectedStage(e.target.value);
+                            }}
+                            className="w-full px-2 py-1 rounded-lg bg-slate-900 text-teal-300 border border-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                          >
+                            {stages.map((s) => (
+                              <option key={s.id} value={s.id} disabled={!currentResult && s.id !== 'original'}>
+                                {s.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
                       <ImageSplitSlider
-                        beforeImage={inputPreviewUrl}
-                        afterImage={
-                          currentResult?.images?.labeled ||
-                          currentResult?.images?.opened ||
-                          null
-                        }
-                        beforeLabel="Original Image"
-                        afterLabel={currentResult ? 'Separated Objects' : 'Awaiting Processing'}
+                        beforeImage={getStageImage(leftStage)}
+                        afterImage={getStageImage(rightStage)}
+                        beforeLabel={getStageMeta(leftStage).label}
+                        afterLabel={currentResult ? getStageMeta(rightStage).label : 'Awaiting Processing'}
                         theme="teal"
                         className="w-full h-80 sm:h-96"
                       />
@@ -843,17 +993,22 @@ export const MorphologyPage = () => {
                   {/* View Mode: Single Stage View */}
                   {viewMode === 'single' && (
                     <div className="w-full h-80 sm:h-96 flex items-center justify-center p-2 relative">
-                      <img
-                        src={
-                          currentResult?.images?.[activeStage] ||
-                          inputPreviewUrl
-                        }
-                        alt={`Stage: ${activeStage}`}
-                        className="max-h-full max-w-full object-contain rounded-lg shadow-inner"
-                      />
-                      {!currentResult && activeStage !== 'original' && (
-                        <div className="absolute top-4 right-4 px-3 py-1 rounded-full bg-slate-900/90 border border-teal-500/50 text-teal-300 text-[11px] font-mono backdrop-blur-md">
-                          Previewing Target • Run to view {stages.find((s) => s.id === activeStage)?.label}
+                      {getStageImage(selectedStage) ? (
+                        <img
+                          src={getStageImage(selectedStage)}
+                          alt={getStageMeta(selectedStage).label}
+                          className="max-h-full max-w-full object-contain rounded-lg shadow-inner"
+                        />
+                      ) : (
+                        <div className="text-center space-y-1.5 p-6">
+                          <div className="text-xs font-mono font-bold text-slate-300">
+                            {currentResult ? 'Stage unavailable' : 'Awaiting Processing'}
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-500">
+                            {currentResult
+                              ? `No output generated for ${getStageMeta(selectedStage).label}.`
+                              : `Click "Apply Processing" to generate ${getStageMeta(selectedStage).label}.`}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -861,36 +1016,101 @@ export const MorphologyPage = () => {
 
                   {/* View Mode: Dual View Side-by-Side */}
                   {viewMode === 'sideBySide' && (
-                    <div className="w-full grid grid-cols-2 gap-2 p-2 h-80 sm:h-96">
-                      <div className="flex flex-col items-center justify-center bg-slate-900 rounded-lg p-2 border border-slate-800">
-                        <span className="text-[10px] font-mono font-bold text-slate-400 mb-1">
-                          ORIGINAL TOUCHING COINS
-                        </span>
-                        <img
-                          src={inputPreviewUrl}
-                          alt="Original Touching Coins"
-                          className="max-h-64 object-contain rounded"
-                        />
-                      </div>
-                      <div className="flex flex-col items-center justify-center bg-slate-900 rounded-lg p-2 border border-slate-800">
-                        <span className="text-[10px] font-mono font-bold text-teal-400 mb-1">
-                          SEPARATED CONNECTED COMPONENTS
-                        </span>
-                        {currentResult?.images?.labeled ? (
-                          <img
-                            src={currentResult.images.labeled}
-                            alt="Separated Objects"
-                            className="max-h-64 object-contain rounded"
-                          />
-                        ) : (
-                          <div className="text-xs text-slate-500 font-mono text-center p-4">
-                            Run processing to view separated objects
-                          </div>
-                        )}
+                    <div className="w-full p-2.5 space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {[
+                          { label: 'LEFT PANEL', value: leftStage, onChange: setLeftStage, accent: 'text-slate-300' },
+                          {
+                            label: 'RIGHT PANEL',
+                            value: rightStage,
+                            onChange: (val) => {
+                              setRightStage(val);
+                              setSelectedStage(val);
+                            },
+                            accent: 'text-teal-300',
+                          },
+                        ].map((panel) => {
+                          const panelImg = getStageImage(panel.value);
+                          const panelMeta = getStageMeta(panel.value);
+                          return (
+                            <div
+                              key={panel.label}
+                              className="flex flex-col bg-slate-900 rounded-lg p-2.5 border border-slate-800 space-y-2 min-h-[290px]"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-[10px] font-mono font-bold ${panel.accent}`}>
+                                  {panel.label}
+                                </span>
+                                <select
+                                  value={panel.value}
+                                  onChange={(e) => panel.onChange(e.target.value)}
+                                  className="text-[11px] font-mono px-2 py-1 rounded bg-slate-950 text-slate-200 border border-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-500 max-w-[190px]"
+                                >
+                                  {stages.map((s) => (
+                                    <option key={s.id} value={s.id} disabled={!currentResult && s.id !== 'original'}>
+                                      {s.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="flex-1 flex items-center justify-center bg-slate-950/60 rounded border border-slate-800/80 p-1.5 min-h-[220px]">
+                                {panelImg ? (
+                                  <img
+                                    src={panelImg}
+                                    alt={panelMeta.label}
+                                    className="max-h-60 max-w-full object-contain rounded"
+                                  />
+                                ) : (
+                                  <div className="text-xs text-slate-500 font-mono text-center p-4">
+                                    {currentResult ? 'Stage unavailable' : `Run processing to view ${panelMeta.label}`}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
                 </div>
+
+                {/* Zoom / Preview Modal for Active Stage */}
+                {isZoomModalOpen && getStageImage(selectedStage) && (
+                  <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm"
+                    onClick={() => setIsZoomModalOpen(false)}
+                  >
+                    <div
+                      className="max-w-4xl w-full rounded-2xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800 overflow-hidden shadow-2xl"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 dark:border-slate-800">
+                        <div>
+                          <h4 className="text-sm font-bold text-slate-900 dark:text-white">
+                            {getStageMeta(selectedStage).label}
+                          </h4>
+                          <p className="text-[11px] font-mono text-slate-500">
+                            {currentResult?.metadata?.width || imageMeta.width} × {currentResult?.metadata?.height || imageMeta.height} px
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsZoomModalOpen(false)}
+                          className="px-3 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <div className="p-4 bg-slate-950 flex items-center justify-center max-h-[75vh]">
+                        <img
+                          src={getStageImage(selectedStage)}
+                          alt={getStageMeta(selectedStage).label}
+                          className="max-h-[68vh] w-auto object-contain rounded"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Direct Image Downloads */}
                 {currentResult?.images && (
