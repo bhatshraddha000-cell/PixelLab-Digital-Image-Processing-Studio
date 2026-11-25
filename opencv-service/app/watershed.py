@@ -7,6 +7,10 @@ import numpy as np
 from .utils import (
     encode_image_to_base64,
     get_image_metadata,
+    calculate_histogram_256,
+    calculate_binary_statistics,
+    fill_small_holes,
+    compute_foreground_mask,
 )
 
 def get_structuring_element(shape_name: str, k_size: int) -> np.ndarray:
@@ -89,48 +93,45 @@ def process_watershed_pipeline(
 ) -> Dict[str, Any]:
     start_time = time.perf_counter()
 
-    # Stage 1: Preserve original & prepare 3-channel 8-bit BGR for watershed
-    if len(img.shape) == 2:
-        bgr_img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        gray = img.copy()
-    else:
-        bgr_img = img.copy()
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    h, w = gray.shape
-
-    # Stage 2: Noise removal / Preprocessing filter
+    # Stage 1, 2 & 3: Polarity-aware foreground segmentation (supports otsu, manual, adaptive, lab, hsv)
     blur_k = max(3, blur_kernel if blur_kernel % 2 == 1 else blur_kernel + 1)
-    if blur_method.lower() == "median":
+    bgr_img, gray, blurred, binary_raw, mask_diag = compute_foreground_mask(
+        img=img,
+        threshold_method=threshold_method,
+        threshold_value=threshold_value,
+        polarity=polarity,
+        blur_kernel=blur_k,
+    )
+    h, w = gray.shape
+    thresh_val = max(0, min(255, int(threshold_value)))
+
+    if blur_method.lower() == "median" and threshold_method.lower() not in ["lab", "hsv"]:
         blurred = cv2.medianBlur(gray, blur_k)
-    elif blur_method.lower() == "gaussian":
-        blurred = cv2.GaussianBlur(gray, (blur_k, blur_k), 0.8)
-    else:
+        _, _, _, binary_raw, mask_diag = compute_foreground_mask(
+            img=blurred,
+            threshold_method=threshold_method,
+            threshold_value=threshold_value,
+            polarity=polarity,
+            blur_kernel=3,
+        )
+    elif blur_method.lower() == "none":
         blurred = gray.copy()
 
-    # Stage 3: Image Thresholding
-    thresh_val = max(0, min(255, int(threshold_value)))
-    if threshold_method.lower() == "manual":
-        _, binary = cv2.threshold(blurred, thresh_val, 255, cv2.THRESH_BINARY)
-    elif threshold_method.lower() == "adaptive":
-        adaptive_block = max(3, blur_k if blur_k % 2 == 1 else blur_k + 1)
-        if adaptive_block < 7:
-            adaptive_block = 11
-        binary = cv2.adaptiveThreshold(
-            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, adaptive_block, 2
-        )
-    else:
-        # Default Otsu thresholding
-        _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-
-    # Invert binary image if dark objects on bright background
-    if polarity.lower() in ["dark_on_bright", "dark_objects"]:
-        binary = cv2.bitwise_not(binary)
+    # Fill tiny internal coin relief/engraving pinholes without filling inter-coin pockets
+    binary = fill_small_holes(binary_raw, max_hole_ratio=0.001)
 
     # Stage 4: Morphological Opening (Remove small noise pixels)
     se_opening = get_structuring_element(structuring_element, opening_kernel_size)
     open_iters = max(1, min(10, int(opening_iterations)))
-    opened = cv2.morphologyEx(binary, cv2.MORPH_OPEN, se_opening, iterations=open_iters)
+    opened_raw = cv2.morphologyEx(binary, cv2.MORPH_OPEN, se_opening, iterations=open_iters)
+
+    # Remove small non-coin background artifacts (e.g., flag stars or speckles) prior to distance transform
+    min_area = max(5, int(min_region_area))
+    n_op, lbl_op, st_op, _ = cv2.connectedComponentsWithStats(opened_raw, connectivity=8)
+    opened = np.zeros_like(opened_raw)
+    for i in range(1, n_op):
+        if int(st_op[i, cv2.CC_STAT_AREA]) >= min_area:
+            opened[lbl_op == i] = 255
 
     # Stage 5: Sure Background via Morphological Dilation
     bg_iters = max(1, min(10, int(bg_dilation_iterations)))
@@ -148,11 +149,38 @@ def process_watershed_pipeline(
 
     dist_heatmap = cv2.applyColorMap(norm_dist, cv2.COLORMAP_JET)
 
-    # Stage 7: Sure Foreground Markers
+    # Stage 7: Sure Foreground Markers (Global Threshold + Local-Maxima Rescue for Multi-Size/Touching Coins)
     fg_factor = max(0.10, min(0.95, float(fg_threshold_factor)))
     cutoff_val = fg_factor * max_dist
     _, sure_fg = cv2.threshold(dist_transform, cutoff_val, 255, cv2.THRESH_BINARY)
     sure_fg = np.uint8(sure_fg)
+
+    # When using color-distance segmentation (LAB/HSV) or when components lack global seeds
+    # (e.g., smaller coins alongside large coins, or touching clusters), extract local maxima peaks
+    if max_dist > 0:
+        dist_smooth = cv2.GaussianBlur(dist_transform, (5, 5), 1.0)
+        sep_px = max(15, int(min(h, w) * 0.075))
+        if sep_px % 2 == 0:
+            sep_px += 1
+        k_sep = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (sep_px, sep_px))
+        local_peaks = (dist_smooth == cv2.dilate(dist_smooth, k_sep)) & (
+            dist_smooth >= max(5.0, fg_factor * 0.45 * max_dist)
+        )
+        peak_seeds = cv2.dilate(
+            local_peaks.astype(np.uint8) * 255,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)),
+        )
+
+        if threshold_method.lower() in ["lab", "hsv"]:
+            # Color-segmented touching clusters benefit directly from NMS local-maxima seeds
+            sure_fg = peak_seeds
+        else:
+            # Rescue any foreground component that has 0 global seeds (e.g. smaller coins)
+            n_fg_comp, lbl_fg_comp, _, _ = cv2.connectedComponentsWithStats(opened, connectivity=8)
+            for ci in range(1, n_fg_comp):
+                comp_mask = lbl_fg_comp == ci
+                if np.count_nonzero(sure_fg[comp_mask]) == 0:
+                    sure_fg[comp_mask] = peak_seeds[comp_mask]
 
     # Stage 8: Unknown Region (Unknown = Sure BG - Sure FG)
     unknown = cv2.subtract(sure_bg, sure_fg)
@@ -198,14 +226,14 @@ def process_watershed_pipeline(
 
     segmented_colored = np.zeros_like(bgr_img)
     valid_components = []
-    min_area = max(5, int(min_region_area))
+    min_post_area = max(5, int(min_area * 0.7))
 
     for idx, label in enumerate(all_positive_labels):
         comp_mask = (markers_int32 == label).astype(np.uint8) * 255
         area = int(np.count_nonzero(comp_mask))
 
         # Filter out tiny noise artifacts
-        if area < min_area:
+        if area < min_post_area:
             continue
 
         color = palette[idx % len(palette)]
@@ -323,6 +351,18 @@ def process_watershed_pipeline(
 
     metadata = get_image_metadata(img)
 
+    # Calculate genuine 256-bin histograms and two-level binary segmentation statistics
+    final_fg_binary = (markers_int32 > 1).astype(np.uint8) * 255
+    histograms: Dict[str, Any] = {
+        "original_grayscale": calculate_histogram_256(gray),
+        "preprocessed_grayscale": calculate_histogram_256(blurred),
+        "binary_stats": calculate_binary_statistics(binary),
+        "opened_binary_stats": calculate_binary_statistics(opened),
+        "segmented_binary_stats": calculate_binary_statistics(final_fg_binary),
+    }
+    if len(img.shape) == 3 and img.shape[2] >= 3:
+        histograms["original_color"] = calculate_histogram_256(img)
+
     return {
         "status": "success",
         "processing_time_ms": elapsed_ms,
@@ -347,6 +387,12 @@ def process_watershed_pipeline(
         "automatic_count": total_coins_detected,
         "components": valid_components,
         "evaluation": evaluation,
+        "diagnostics": {
+            **mask_diag,
+            "markers_generated": max(0, int(num_markers - 1)),
+            "final_regions": total_coins_detected,
+        },
+        "histograms": histograms,
         "images": images,
     }
 

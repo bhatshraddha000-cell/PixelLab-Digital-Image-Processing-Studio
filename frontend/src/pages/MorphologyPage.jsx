@@ -29,6 +29,8 @@ import {
 } from 'lucide-react';
 import ImageSplitSlider from '../components/ImageSplitSlider';
 import MathFormula from '../components/MathFormula';
+import HistogramChart from '../components/HistogramChart';
+import SampleGallery from '../components/SampleGallery';
 import apiService from '../services/api';
 import {
   exportMorphologyCSV,
@@ -58,6 +60,10 @@ export const MorphologyPage = () => {
   const [kernelSize, setKernelSize] = useState(3);
   const [erosionIterations, setErosionIterations] = useState(3);
   const [dilationIterations, setDilationIterations] = useState(1);
+
+  // Histogram UI state (independent from algorithm execution)
+  const [histViewMode, setHistViewMode] = useState('both'); // 'both' | 'original' | 'preprocessed' | 'color'
+  const [histChannel, setHistChannel] = useState('luminance'); // 'luminance' | 'r' | 'g' | 'b'
   const [operationMode, setOperationMode] = useState('custom'); // 'custom' | 'opening' | 'erosion_only'
   const [connectivity, setConnectivity] = useState(8); // 4 | 8
   const [minComponentArea, setMinComponentArea] = useState(50);
@@ -121,6 +127,7 @@ export const MorphologyPage = () => {
 
     if (sample.recommendedParams) {
       setThresholdMethod(sample.recommendedParams.thresholdMethod || 'otsu');
+      setPolarity(sample.recommendedParams.polarity || 'auto');
       setStructuringElement(sample.recommendedParams.structuringElement || 'ellipse');
       setKernelSize(sample.recommendedParams.kernelWidth || 3);
       setErosionIterations(sample.recommendedParams.erosionIterations || 3);
@@ -439,35 +446,14 @@ export const MorphologyPage = () => {
                 {sourceType === 'sample' && (
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
-                      Select Benchmark Target:
+                      Select Photographic Benchmark:
                     </label>
-                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                      {samples.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => handleSelectSample(s)}
-                          className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-center space-x-3 ${
-                            selectedSampleId === s.id
-                              ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-950 dark:text-teal-200 font-semibold'
-                              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <img
-                            src={s.previewUrl}
-                            alt={s.name}
-                            className="w-12 h-12 rounded-lg object-cover border border-slate-300 dark:border-slate-700 bg-slate-900 shrink-0"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-bold truncate">{s.name}</div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                              Ground-Truth: {s.manualCount} coins • {s.dimensions}
-                            </div>
-                          </div>
-                          {selectedSampleId === s.id && <Check className="w-4 h-4 text-teal-600 dark:text-teal-400 flex-shrink-0" />}
-                        </button>
-                      ))}
-                    </div>
+                    <SampleGallery
+                      samples={samples}
+                      selectedId={selectedSampleId}
+                      onSelect={handleSelectSample}
+                      accentColor="teal"
+                    />
                   </div>
                 )}
 
@@ -512,13 +498,13 @@ export const MorphologyPage = () => {
                     <span>Binarization Algorithm</span>
                     <span className="font-mono text-teal-600 dark:text-teal-400 uppercase">{thresholdMethod}</span>
                   </label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {['otsu', 'manual', 'adaptive'].map((method) => (
+                  <div className="grid grid-cols-5 gap-1">
+                    {['otsu', 'manual', 'adaptive', 'lab', 'hsv'].map((method) => (
                       <button
                         key={method}
                         type="button"
                         onClick={() => setThresholdMethod(method)}
-                        className={`py-1.5 text-xs font-semibold rounded-lg capitalize transition-all ${
+                        className={`py-1.5 text-[11px] font-semibold rounded-lg uppercase transition-all ${
                           thresholdMethod === method
                             ? 'bg-teal-600 text-white shadow-sm'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
@@ -554,28 +540,39 @@ export const MorphologyPage = () => {
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
                     Object Polarity:
                   </label>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="grid grid-cols-3 gap-1.5 text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setPolarity('auto')}
+                      className={`py-1.5 px-1.5 rounded-lg font-medium border text-center transition-all ${
+                        polarity === 'auto'
+                          ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 font-bold'
+                          : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      Auto Polarity
+                    </button>
                     <button
                       type="button"
                       onClick={() => setPolarity('bright_on_dark')}
-                      className={`py-1.5 px-2 rounded-lg font-medium border text-center transition-all ${
+                      className={`py-1.5 px-1.5 rounded-lg font-medium border text-center transition-all ${
                         polarity === 'bright_on_dark'
                           ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 font-bold'
                           : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                       }`}
                     >
-                      Bright Coins / Dark BG
+                      Bright / Dark BG
                     </button>
                     <button
                       type="button"
                       onClick={() => setPolarity('dark_on_bright')}
-                      className={`py-1.5 px-2 rounded-lg font-medium border text-center transition-all ${
+                      className={`py-1.5 px-1.5 rounded-lg font-medium border text-center transition-all ${
                         polarity === 'dark_on_bright'
                           ? 'border-teal-500 bg-teal-50 dark:bg-teal-950/40 text-teal-900 dark:text-teal-200 font-bold'
                           : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
                       }`}
                     >
-                      Dark Coins / Light BG
+                      Dark / Light BG
                     </button>
                   </div>
                 </div>
@@ -958,6 +955,28 @@ export const MorphologyPage = () => {
                   )}
                 </div>
 
+                {/* Diagnostic Warnings & Polarity Status */}
+                {currentResult?.diagnostics && (
+                  <div className="space-y-2">
+                    {currentResult.diagnostics.warnings?.length > 0 && (
+                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex items-start space-x-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                        <span>{currentResult.diagnostics.warnings[0]}</span>
+                      </div>
+                    )}
+                    {currentResult.automaticCount === 0 && (
+                      <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 text-red-700 dark:text-red-300 text-xs flex items-start space-x-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>No foreground components detected. Adjust threshold method, polarity, or minimum area.</span>
+                      </div>
+                    )}
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-600 dark:text-slate-400 flex justify-between">
+                      <span>Polarity: <strong className="text-slate-800 dark:text-slate-200">{currentResult.diagnostics.effective_polarity}</strong></span>
+                      <span>Border FG: <strong className="text-slate-800 dark:text-slate-200">{(currentResult.diagnostics.border_fg_ratio * 100).toFixed(1)}%</strong></span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Accuracy Comparison Card */}
                 {currentResult?.evaluation?.has_manual_reference && (
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
@@ -1217,6 +1236,175 @@ export const MorphologyPage = () => {
               </div>
             </div>
 
+          </div>
+
+          {/* ========================================================== */}
+          {/* PIXEL INTENSITY HISTOGRAM ANALYSIS SECTION */}
+          {/* ========================================================== */}
+          <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-navy-900/80 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white flex items-center space-x-2">
+                  <BarChart3 className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                  <span>Pixel Intensity Histogram Analysis</span>
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                  Actual 256-bin intensity distributions calculated from the current coin image before binary thresholding.
+                </p>
+              </div>
+
+              {/* Source Switcher */}
+              <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono">
+                {[
+                  { id: 'both', label: 'Comparison' },
+                  { id: 'original', label: 'Original Gray' },
+                  { id: 'preprocessed', label: 'Preprocessed Gray' },
+                  { id: 'binary', label: 'Binary (0 & 255)' },
+                  ...(currentResult?.histograms?.original_color ? [{ id: 'color', label: 'Color Channels' }] : []),
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setHistViewMode(tab.id)}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                      histViewMode === tab.id
+                        ? 'bg-white dark:bg-slate-800 text-teal-700 dark:text-teal-400 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {!currentResult?.histograms ? (
+              <div className="p-8 text-center text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200 dark:border-slate-800">
+                Run morphological processing on any coin image to inspect genuine 256-bin grayscale histograms and binary foreground/background statistics.
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {histViewMode === 'both' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <HistogramChart
+                      histogram={currentResult.histograms.original_grayscale}
+                      title="Original Grayscale Histogram"
+                      subtitle="Raw pixel intensity frequencies after grayscale conversion"
+                      primaryLabel="Original Gray"
+                      loading={isProcessing}
+                    />
+                    <HistogramChart
+                      histogram={currentResult.histograms.preprocessed_grayscale}
+                      title="Preprocessed Grayscale Histogram"
+                      subtitle="Filtered grayscale image (3×3 Gaussian) prior to thresholding"
+                      primaryLabel="Preprocessed Gray"
+                      loading={isProcessing}
+                    />
+                  </div>
+                )}
+
+                {histViewMode === 'original' && (
+                  <HistogramChart
+                    histogram={currentResult.histograms.original_grayscale}
+                    title="Original Grayscale Histogram"
+                    subtitle="Raw pixel intensity frequencies (0–255) after grayscale conversion"
+                    primaryLabel="Original Gray"
+                    loading={isProcessing}
+                  />
+                )}
+
+                {histViewMode === 'preprocessed' && (
+                  <HistogramChart
+                    histogram={currentResult.histograms.preprocessed_grayscale}
+                    title="Preprocessed Grayscale Histogram"
+                    subtitle="Filtered grayscale intensity distribution before binary thresholding"
+                    primaryLabel="Preprocessed Gray"
+                    loading={isProcessing}
+                  />
+                )}
+
+                {histViewMode === 'binary' && currentResult.histograms.binary_stats?.histogram256 && (
+                  <HistogramChart
+                    histogram={currentResult.histograms.binary_stats.histogram256}
+                    title="Binary Mask 256-Bin Histogram (Levels 0 & 255)"
+                    subtitle="Genuine binary intensity distribution: only Background (0) and Foreground (255) bins are populated"
+                    primaryLabel="Binary Pixel Count"
+                    loading={isProcessing}
+                  />
+                )}
+
+                {histViewMode === 'color' && currentResult.histograms.original_color && (
+                  <HistogramChart
+                    histogram={currentResult.histograms.original_color}
+                    title="Original Image Color Channel Histogram"
+                    subtitle="Select Luminance, Red, Green, or Blue channel from the original RGB image"
+                    lineColor="#06b6d4"
+                    primaryLabel="Channel Count"
+                    showChannelSelector={true}
+                    channel={histChannel}
+                    onChannelChange={setHistChannel}
+                    loading={isProcessing}
+                  />
+                )}
+
+                {/* Genuine Binary Foreground / Background Distribution (0 and 255 only) */}
+                {currentResult.histograms.binary_stats && (
+                  <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-mono">
+                          Binary Output Intensity Distribution (Two-Level: 0 &amp; 255)
+                        </h4>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                          Morphological binary masks contain strictly two intensity levels (0 = Background, 255 = Foreground).
+                        </p>
+                      </div>
+                      <span className="text-[11px] font-mono px-2.5 py-1 rounded-lg bg-teal-500/10 text-teal-700 dark:text-teal-300 border border-teal-500/20 font-semibold">
+                        2 Non-Zero Bins (0, 255)
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs font-mono">
+                      <div className="p-3 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800">
+                        <div className="text-slate-500 dark:text-slate-400 text-[11px]">Background Pixels (0)</div>
+                        <div className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
+                          {currentResult.histograms.binary_stats.backgroundPixels.toLocaleString()} px
+                        </div>
+                        <div className="text-[11px] text-slate-500">
+                          {currentResult.histograms.binary_stats.backgroundPercentage}% of image
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800">
+                        <div className="text-slate-500 dark:text-slate-400 text-[11px]">Foreground Pixels (255)</div>
+                        <div className="text-base font-extrabold text-teal-600 dark:text-teal-400 mt-0.5">
+                          {currentResult.histograms.binary_stats.foregroundPixels.toLocaleString()} px
+                        </div>
+                        <div className="text-[11px] text-teal-600 dark:text-teal-400 font-semibold">
+                          Total Foreground: {currentResult.histograms.binary_stats.foregroundPercentage}%
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800 flex flex-col justify-center space-y-2">
+                        <div className="flex justify-between text-[11px]">
+                          <span className="text-slate-600 dark:text-slate-400">FG vs BG Ratio</span>
+                          <span className="font-bold text-slate-900 dark:text-white">
+                            {currentResult.histograms.binary_stats.foregroundPercentage}% / {currentResult.histograms.binary_stats.backgroundPercentage}%
+                          </span>
+                        </div>
+                        <div className="w-full h-3 rounded-full bg-slate-200 dark:bg-slate-800 overflow-hidden flex">
+                          <div
+                            className="h-full bg-teal-500"
+                            style={{ width: `${currentResult.histograms.binary_stats.foregroundPercentage}%` }}
+                            title={`Foreground (255): ${currentResult.histograms.binary_stats.foregroundPercentage}%`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
         </div>

@@ -6,7 +6,11 @@ from typing import Dict, Any, List, Optional, Tuple
 from .utils import (
     decode_image_bytes,
     encode_image_to_base64,
-    get_image_metadata
+    get_image_metadata,
+    calculate_histogram_256,
+    calculate_binary_statistics,
+    fill_small_holes,
+    compute_foreground_mask,
 )
 
 def create_labeled_visualization(
@@ -116,31 +120,17 @@ def process_morphology_pipeline(
     """
     start_time = time.perf_counter()
 
-    # Stage 1 & 2: Grayscale conversion
-    if len(img.shape) == 3 and img.shape[2] >= 3:
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    else:
-        gray = img.copy()
+    # Stage 1, 2 & 3: Polarity-aware foreground segmentation (Otsu, Manual, Adaptive, LAB, HSV)
+    bgr, gray, smoothed_gray, binary_raw, mask_diag = compute_foreground_mask(
+        img=img,
+        threshold_method=threshold_method,
+        threshold_value=threshold_value,
+        polarity=polarity,
+        blur_kernel=3,
+    )
 
-    # Mild 3x3 Gaussian smoothing to suppress sensor noise before thresholding
-    smoothed_gray = cv2.GaussianBlur(gray, (3, 3), 0.5)
-
-    # Stage 3: Binary Thresholding
-    threshold_method = threshold_method.lower()
-    if threshold_method == "otsu":
-        _, binary = cv2.threshold(smoothed_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    elif threshold_method == "adaptive":
-        binary = cv2.adaptiveThreshold(
-            smoothed_gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 2
-        )
-    else:  # manual
-        thresh_val = max(1, min(254, int(threshold_value)))
-        _, binary = cv2.threshold(smoothed_gray, thresh_val, 255, cv2.THRESH_BINARY)
-
-    # Polarity Handling: Ensure foreground objects are white (255)
-    # If dark objects on bright background, invert binary mask
-    if polarity == "dark_on_bright":
-        binary = cv2.bitwise_not(binary)
+    # Fill small internal coin relief/engraving holes without filling inter-coin gaps
+    binary = fill_small_holes(binary_raw, max_hole_ratio=0.006)
 
     initial_fg_pixels = int(np.count_nonzero(binary))
 
@@ -274,6 +264,16 @@ def process_morphology_pipeline(
 
     metadata = get_image_metadata(img)
 
+    # Calculate genuine 256-bin histograms and two-level binary statistics
+    histograms: Dict[str, Any] = {
+        "original_grayscale": calculate_histogram_256(gray),
+        "preprocessed_grayscale": calculate_histogram_256(smoothed_gray),
+        "binary_stats": calculate_binary_statistics(final_binary),
+        "initial_binary_stats": calculate_binary_statistics(binary),
+    }
+    if len(img.shape) == 3 and img.shape[2] >= 3:
+        histograms["original_color"] = calculate_histogram_256(img)
+
     return {
         "status": "success",
         "processing_time_ms": elapsed_ms,
@@ -282,6 +282,7 @@ def process_morphology_pipeline(
             "threshold_method": threshold_method,
             "threshold_value": threshold_value,
             "polarity": polarity,
+            "effective_polarity": mask_diag.get("effective_polarity", polarity),
             "structuring_element": structuring_element,
             "kernel_width": kw,
             "kernel_height": kh,
@@ -295,6 +296,12 @@ def process_morphology_pipeline(
         "automatic_count": automatic_count,
         "components": components_info,
         "evaluation": evaluation,
+        "diagnostics": {
+            **mask_diag,
+            "initial_components": initial_components_count,
+            "final_components": automatic_count,
+        },
+        "histograms": histograms,
         "images": images
     }
 

@@ -34,6 +34,8 @@ import {
 import ImageSplitSlider from '../components/ImageSplitSlider';
 import MathFormula from '../components/MathFormula';
 import ErrorBoundary from '../components/ErrorBoundary';
+import HistogramChart from '../components/HistogramChart';
+import SampleGallery from '../components/SampleGallery';
 import apiService from '../services/api';
 import {
   exportWatershedCSV,
@@ -63,6 +65,11 @@ export const WatershedPage = () => {
   const [blurMethod, setBlurMethod] = useState('gaussian'); // 'gaussian' | 'median' | 'none'
   const [blurKernel, setBlurKernel] = useState(5);
   const [thresholdMethod, setThresholdMethod] = useState('otsu'); // 'otsu' | 'manual' | 'adaptive'
+
+  // Histogram UI state (independent from watershed stages)
+  const [histViewMode, setHistViewMode] = useState('both'); // 'both' | 'original' | 'preprocessed' | 'color'
+  const [histChannel, setHistChannel] = useState('luminance');
+  const [binaryStatsStage, setBinaryStatsStage] = useState('binary'); // 'binary' | 'opened' | 'segmented'
   const [thresholdValue, setThresholdValue] = useState(127);
   const [polarity, setPolarity] = useState('bright_on_dark'); // 'bright_on_dark' | 'dark_on_bright'
   const [structuringElement, setStructuringElement] = useState('ellipse'); // 'ellipse' | 'rectangle' | 'cross'
@@ -642,33 +649,12 @@ export const WatershedPage = () => {
                     <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
                       Select Photographic Benchmark:
                     </label>
-                    <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
-                      {samples.map((s) => (
-                        <button
-                          key={s.id}
-                          type="button"
-                          onClick={() => handleSelectSample(s)}
-                          className={`w-full text-left p-2.5 rounded-xl border text-xs transition-all flex items-center space-x-3 ${
-                            selectedSampleId === s.id
-                              ? 'border-cyan-500 bg-cyan-50 dark:bg-cyan-950/40 text-cyan-950 dark:text-cyan-200 font-semibold'
-                              : 'border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <img
-                            src={s.previewUrl}
-                            alt={s.name}
-                            className="w-12 h-12 rounded-lg object-cover border border-slate-300 dark:border-slate-700 bg-slate-900 shrink-0"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="font-bold truncate">{s.name}</div>
-                            <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                              Ground Truth: {s.manualCount} coins • {s.dimensions}
-                            </div>
-                          </div>
-                          {selectedSampleId === s.id && <Check className="w-4 h-4 text-cyan-600 dark:text-cyan-400 flex-shrink-0" />}
-                        </button>
-                      ))}
-                    </div>
+                    <SampleGallery
+                      samples={samples}
+                      selectedId={selectedSampleId}
+                      onSelect={handleSelectSample}
+                      accentColor="cyan"
+                    />
                   </div>
                 )}
 
@@ -796,13 +782,13 @@ export const WatershedPage = () => {
                     <span>Thresholding Algorithm</span>
                     <span className="font-mono text-cyan-600 uppercase">{thresholdMethod}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {['otsu', 'manual', 'adaptive'].map((t) => (
+                  <div className="grid grid-cols-5 gap-1">
+                    {['otsu', 'manual', 'adaptive', 'lab', 'hsv'].map((t) => (
                       <button
                         key={t}
                         type="button"
                         onClick={() => setThresholdMethod(t)}
-                        className={`py-1 text-xs font-semibold rounded-lg capitalize transition-all ${
+                        className={`py-1 text-[11px] font-semibold rounded-lg uppercase transition-all ${
                           thresholdMethod === t
                             ? 'bg-cyan-600 text-white shadow-sm'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
@@ -1363,6 +1349,29 @@ export const WatershedPage = () => {
                   )}
                 </div>
 
+                {/* Diagnostic Warnings & Marker Telemetry */}
+                {currentResult?.diagnostics && (
+                  <div className="space-y-2">
+                    {currentResult.diagnostics.warnings?.length > 0 && (
+                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex items-start space-x-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                        <span>{currentResult.diagnostics.warnings[0]}</span>
+                      </div>
+                    )}
+                    {currentResult.diagnostics.markers_generated <= 1 && (
+                      <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs flex items-start space-x-2">
+                        <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>Only {currentResult.diagnostics.markers_generated} foreground marker(s) generated. Try lowering θ or switching threshold method (Otsu / LAB).</span>
+                      </div>
+                    )}
+                    <div className="px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] font-mono text-slate-600 dark:text-slate-400 flex justify-between">
+                      <span>Seeds: <strong className="text-slate-800 dark:text-slate-200">{currentResult.diagnostics.markers_generated}</strong></span>
+                      <span>Regions: <strong className="text-slate-800 dark:text-slate-200">{currentResult.diagnostics.final_regions}</strong></span>
+                      <span>Border FG: <strong className="text-slate-800 dark:text-slate-200">{(currentResult.diagnostics.border_fg_ratio * 100).toFixed(1)}%</strong></span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Ground Truth Count Agreement Card */}
                 {currentResult?.evaluation?.has_manual_reference && (
                   <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
@@ -1620,6 +1629,199 @@ export const WatershedPage = () => {
               </div>
             </div>
 
+          </div>
+
+          {/* ========================================================== */}
+          {/* INTENSITY DISTRIBUTION AND SEGMENTATION ANALYSIS SECTION */}
+          {/* ========================================================== */}
+          <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-navy-900/80 border border-slate-200 dark:border-slate-800 shadow-sm space-y-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white flex items-center space-x-2">
+                  <BarChart3 className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                  <span>Intensity Distribution and Segmentation Analysis</span>
+                </h3>
+                <p className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
+                  256-bin grayscale intensity histograms and two-level binary segmentation statistics computed from actual pixels.
+                </p>
+              </div>
+
+              {/* Independent Histogram Source Switcher */}
+              <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-mono">
+                {[
+                  { id: 'both', label: 'Comparison' },
+                  { id: 'original', label: 'Original Grayscale' },
+                  { id: 'preprocessed', label: 'Noise-Reduced Grayscale' },
+                  { id: 'binary', label: 'Binary (0 & 255)' },
+                  ...(currentResult?.histograms?.original_color ? [{ id: 'color', label: 'Color Channels' }] : []),
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setHistViewMode(tab.id)}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition-colors ${
+                      histViewMode === tab.id
+                        ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {!currentResult?.histograms ? (
+              <div className="p-8 text-center text-xs font-mono text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/60 rounded-2xl border border-slate-200 dark:border-slate-800">
+                Execute Watershed Segmentation to view 256-bin grayscale histograms and binary foreground/background statistics.
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {histViewMode === 'both' && (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <HistogramChart
+                      histogram={currentResult.histograms.original_grayscale}
+                      title="Original Grayscale Histogram"
+                      subtitle="Raw pixel intensities after grayscale conversion"
+                      primaryLabel="Original Gray"
+                      loading={isProcessing}
+                    />
+                    <HistogramChart
+                      histogram={currentResult.histograms.preprocessed_grayscale}
+                      title="Noise-Reduced Grayscale Histogram"
+                      subtitle={`Filtered via ${currentResult.parameters?.blur_method || blurMethod} (k=${currentResult.parameters?.blur_kernel || blurKernel})`}
+                      primaryLabel="Noise-Reduced"
+                      loading={isProcessing}
+                    />
+                  </div>
+                )}
+
+                {histViewMode === 'original' && (
+                  <HistogramChart
+                    histogram={currentResult.histograms.original_grayscale}
+                    title="Original Grayscale Histogram"
+                    subtitle="Raw pixel intensity distribution (0–255)"
+                    primaryLabel="Original Gray"
+                    loading={isProcessing}
+                  />
+                )}
+
+                {histViewMode === 'preprocessed' && (
+                  <HistogramChart
+                    histogram={currentResult.histograms.preprocessed_grayscale}
+                    title="Noise-Reduced Grayscale Histogram"
+                    subtitle={`Filtered via ${currentResult.parameters?.blur_method || blurMethod} (k=${currentResult.parameters?.blur_kernel || blurKernel})`}
+                    primaryLabel="Noise-Reduced"
+                    loading={isProcessing}
+                  />
+                )}
+
+                {histViewMode === 'binary' && (
+                  <HistogramChart
+                    histogram={
+                      (binaryStatsStage === 'opened'
+                        ? currentResult.histograms.opened_binary_stats?.histogram256
+                        : binaryStatsStage === 'segmented'
+                        ? currentResult.histograms.segmented_binary_stats?.histogram256
+                        : currentResult.histograms.binary_stats?.histogram256) || null
+                    }
+                    title="Binary Mask 256-Bin Histogram (Levels 0 & 255)"
+                    subtitle="Genuine binary intensity distribution: only Background (0) and Foreground (255) bins are populated"
+                    primaryLabel="Binary Pixel Count"
+                    loading={isProcessing}
+                  />
+                )}
+
+                {histViewMode === 'color' && currentResult.histograms.original_color && (
+                  <HistogramChart
+                    histogram={currentResult.histograms.original_color}
+                    title="Original Color Image Histogram"
+                    subtitle="Luminance and individual R, G, B channels from input image"
+                    lineColor="#06b6d4"
+                    primaryLabel="Channel Count"
+                    showChannelSelector={true}
+                    channel={histChannel}
+                    onChannelChange={setHistChannel}
+                    loading={isProcessing}
+                  />
+                )}
+
+                {/* Binary Segmentation Statistics (0 and 255 only) */}
+                {(() => {
+                  const statsObj =
+                    binaryStatsStage === 'opened'
+                      ? currentResult.histograms.opened_binary_stats
+                      : binaryStatsStage === 'segmented'
+                      ? currentResult.histograms.segmented_binary_stats
+                      : currentResult.histograms.binary_stats;
+
+                  if (!statsObj) return null;
+
+                  return (
+                    <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white font-mono">
+                            Binary Segmentation Statistics (Intensity Levels 0 &amp; 255)
+                          </h4>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                            Binary masks contain only two discrete intensity levels (0 = Background, 255 = Foreground).
+                          </p>
+                        </div>
+
+                        <div className="flex items-center space-x-1 p-0.5 rounded-lg bg-slate-200/70 dark:bg-slate-900 border border-slate-300 dark:border-slate-800 text-[11px] font-mono">
+                          {[
+                            { id: 'binary', label: 'Threshold Mask' },
+                            { id: 'opened', label: 'Opened Mask' },
+                            { id: 'segmented', label: 'Watershed FG' },
+                          ].map((st) => (
+                            <button
+                              key={st.id}
+                              type="button"
+                              onClick={() => setBinaryStatsStage(st.id)}
+                              className={`px-2 py-0.5 rounded-md font-semibold transition-colors ${
+                                binaryStatsStage === st.id
+                                  ? 'bg-white dark:bg-slate-800 text-cyan-700 dark:text-cyan-400 shadow-sm'
+                                  : 'text-slate-600 dark:text-slate-400'
+                              }`}
+                            >
+                              {st.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                        <div className="p-3 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800">
+                          <div className="text-slate-500 dark:text-slate-400 text-[11px]">Background Count (0)</div>
+                          <div className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
+                            {statsObj.backgroundPixels.toLocaleString()} px
+                          </div>
+                        </div>
+                        <div className="p-3 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800">
+                          <div className="text-slate-500 dark:text-slate-400 text-[11px]">Foreground Count (255)</div>
+                          <div className="text-base font-extrabold text-cyan-600 dark:text-cyan-400 mt-0.5">
+                            {statsObj.foregroundPixels.toLocaleString()} px
+                          </div>
+                        </div>
+                        <div className="p-3 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800">
+                          <div className="text-slate-500 dark:text-slate-400 text-[11px]">Foreground %</div>
+                          <div className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                            {statsObj.foregroundPercentage}%
+                          </div>
+                        </div>
+                        <div className="p-3 rounded-xl bg-white dark:bg-navy-900 border border-slate-200 dark:border-slate-800">
+                          <div className="text-slate-500 dark:text-slate-400 text-[11px]">Background %</div>
+                          <div className="text-base font-extrabold text-slate-700 dark:text-slate-300 mt-0.5">
+                            {statsObj.backgroundPercentage}%
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
           </div>
 
         </div>

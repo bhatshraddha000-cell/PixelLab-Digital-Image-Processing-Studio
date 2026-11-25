@@ -48,6 +48,7 @@ import {
 import ImageSplitSlider from '../components/ImageSplitSlider';
 import MathFormula from '../components/MathFormula';
 import ErrorBoundary from '../components/ErrorBoundary';
+import SampleGallery from '../components/SampleGallery';
 import apiService from '../services/api';
 import {
   exportClassificationCSV,
@@ -643,39 +644,14 @@ export const ClassificationPage = () => {
               {sourceType === 'sample' ? (
                 <div className="space-y-3">
                   <label className="text-xs font-semibold text-slate-600 dark:text-slate-400">
-                    Select Benchmark Scene:
+                    Select Photographic Benchmark:
                   </label>
-                  <div className="grid grid-cols-1 gap-2.5">
-                    {samples.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => handleSelectSample(s)}
-                        className={`p-3 rounded-2xl border text-left transition-all flex items-start space-x-3 ${
-                          selectedSampleId === s.id
-                            ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 shadow-sm'
-                            : 'bg-slate-50 dark:bg-navy-800/40 border-slate-200 dark:border-slate-700/60 hover:bg-slate-100 dark:hover:bg-navy-800'
-                        }`}
-                      >
-                        <img
-                          src={s.previewUrl}
-                          alt={s.name}
-                          className="w-14 h-12 rounded-lg object-cover border border-slate-300 dark:border-slate-700 bg-slate-900 shrink-0"
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                            {s.name}
-                          </div>
-                          <div className="text-[11px] text-slate-600 dark:text-slate-400 mt-0.5 line-clamp-1">
-                            {s.description}
-                          </div>
-                          <div className="text-[10px] font-mono text-amber-600 dark:text-amber-400 mt-1">
-                            {s.shapeCount} Geometric Shapes • {s.dimensions}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+                  <SampleGallery
+                    samples={samples}
+                    selectedId={selectedSampleId}
+                    onSelect={handleSelectSample}
+                    accentColor="amber"
+                  />
                 </div>
               ) : (
                 <div className="space-y-3">

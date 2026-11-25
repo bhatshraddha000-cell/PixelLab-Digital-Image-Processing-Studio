@@ -1,46 +1,7 @@
 import cv2
 import numpy as np
 from typing import Dict, Any, List
-
-def calculate_histogram_256(img: np.ndarray) -> Dict[str, Any]:
-    """
-    Calculates exact 256-bin intensity histograms for an OpenCV image.
-    Returns intensity bins (0-255) and frequency distributions for:
-    - Luminance / Grayscale
-    - Red channel (if color)
-    - Green channel (if color)
-    - Blue channel (if color)
-    """
-    bins = list(range(256))
-    channels = 1 if len(img.shape) == 2 else img.shape[2]
-
-    if channels == 1:
-        # Grayscale
-        hist = cv2.calcHist([img], [0], None, [256], [0, 256]).flatten()
-        return {
-            "bins": bins,
-            "luminance": [int(v) for v in hist],
-            "is_color": False
-        }
-    else:
-        # Color image (OpenCV stores BGR)
-        # Convert BGR to standard Grayscale for Luminance histogram
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        hist_lum = cv2.calcHist([gray], [0], None, [256], [0, 256]).flatten()
-
-        # BGR channels
-        hist_b = cv2.calcHist([img], [0], None, [256], [0, 256]).flatten()
-        hist_g = cv2.calcHist([img], [1], None, [256], [0, 256]).flatten()
-        hist_r = cv2.calcHist([img], [2], None, [256], [0, 256]).flatten()
-
-        return {
-            "bins": bins,
-            "luminance": [int(v) for v in hist_lum],
-            "r": [int(v) for v in hist_r],
-            "g": [int(v) for v in hist_g],
-            "b": [int(v) for v in hist_b],
-            "is_color": True
-        }
+from .utils import calculate_histogram_256
 
 def apply_gaussian_filter(img: np.ndarray, kernel_size: int = 5, sigma: float = 0.0) -> np.ndarray:
     """
